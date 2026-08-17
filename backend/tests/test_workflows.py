@@ -151,6 +151,34 @@ def test_medical_user_cannot_nest_acronym_secret_in_allowed_node_config(
     assert response.status_code == 422
 
 
+def test_medical_user_cannot_nest_prefixed_governance_keys_in_allowed_node_config(
+    client,
+    medical_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Prefixed governance workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {
+        "inputSchema": {
+            "openAIApiKey": "raw-secret-token",
+            "requestTimeout": 10,
+        },
+    }
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 422
+
+
 def test_admin_can_store_technical_parameters_in_workflow(
     client,
     admin_token,

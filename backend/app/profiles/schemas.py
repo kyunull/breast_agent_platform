@@ -24,7 +24,9 @@ def _validate_technical_config(config: dict[str, Any]) -> dict[str, Any]:
         normalized_config[normalized] = value
 
     provider = normalized_config.get("provider")
-    if provider is not None and provider not in _SUPPORTED_PROVIDERS:
+    if provider is not None and (
+        not isinstance(provider, str) or provider not in _SUPPORTED_PROVIDERS
+    ):
         raise ValueError("unsupported provider")
 
     top_k = normalized_config.get("top_k")

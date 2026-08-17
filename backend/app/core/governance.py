@@ -112,13 +112,24 @@ _COMPACT_KEY_ALIASES.update(
         for key in _SECRET_KEYS
     }
 )
+_COMPACT_KEY_SUFFIXES = tuple(
+    sorted(
+        _COMPACT_KEY_ALIASES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
 
 
 def normalize_governance_key(key: Any) -> str:
     separated = _ACRONYM_BOUNDARY.sub("_", str(key))
     separated = _CAMEL_CASE_BOUNDARY.sub("_", separated)
     normalized = _KEY_SEPARATOR.sub("_", separated).strip("_").lower()
-    return _COMPACT_KEY_ALIASES.get(normalized.replace("_", ""), normalized)
+    compact = normalized.replace("_", "")
+    for suffix, canonical in _COMPACT_KEY_SUFFIXES:
+        if compact.endswith(suffix):
+            return canonical
+    return normalized
 
 
 def _is_secret_reference_key(key: str) -> bool:

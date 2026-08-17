@@ -119,6 +119,20 @@ def test_technical_profile_validation_canonicalizes_key_aliases(
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("provider", [[], {}])
+def test_technical_profile_rejects_non_string_provider(client, admin_token, provider):
+    payload = _knowledge_payload("Invalid provider type")
+    payload["technical_config"] = {"provider": provider}
+
+    response = client.post(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
 def test_profile_rejects_nested_secret_values(client, admin_token):
     payload = _knowledge_payload("Nested Secret KB")
     payload["technical_config"]["headers"] = {"apiKey": "raw-secret-token"}
@@ -166,6 +180,8 @@ def test_medical_profile_read_redacts_legacy_hidden_options(
                     "scope": "guidelines",
                     "top_k": 99,
                     "APIKey": "raw-secret-token",
+                    "openAIApiKey": "raw-prefixed-secret",
+                    "requestTimeout": 10,
                 },
                 exposed_to_medical=True,
                 is_active=True,
