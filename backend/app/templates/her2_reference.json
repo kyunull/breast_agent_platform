@@ -1,0 +1,54 @@
+{
+  "id": "her2-advanced-reference",
+  "name": "HER2阳性晚期乳腺癌参考流程",
+  "warning": "本模板仅供医学团队评审和修改，不构成个体化医疗建议。",
+  "metadata": {
+    "department": "乳腺肿瘤多学科团队",
+    "risk": "high",
+    "external_refs": ["NCCN_BREAST_CANCER", "CSCO_BREAST_CANCER"]
+  },
+  "graph": {
+    "nodes": [
+      {"id": "patient_input", "type": "input", "name": "院内患者数据", "input_ports": [], "output_ports": ["out"], "config": {"groups": ["pathology", "baseline", "treatment_background"]}},
+      {"id": "pathology_check", "type": "condition", "name": "病理资料是否充分", "input_ports": ["in"], "output_ports": ["yes", "no", "insufficient"], "config": {"expression": "HER2病理结果存在且可判读"}},
+      {"id": "collect_pathology", "type": "clinical_task", "name": "补充病理与免疫组化资料", "input_ports": ["in"], "output_ports": ["out"], "config": {"task_type": "request_missing_evidence", "required_fields": ["HER2", "ER", "PR"]}},
+      {"id": "guideline_rag", "type": "rag", "name": "乳腺癌指南检索", "input_ports": ["in"], "output_ports": ["out", "fertility"], "config": {"knowledge_profile_ref": "breast-knowledgebase-approved", "citation_required": true}},
+      {"id": "her2_decision", "type": "condition", "name": "HER2治疗路径判断", "input_ports": ["in"], "output_ports": ["yes", "no", "evidence"], "config": {"expression": "HER2阳性晚期治疗适应证与证据充分性"}},
+      {"id": "acute_management", "type": "llm", "name": "急症与器官风险评估", "input_ports": ["in"], "output_ports": ["out"], "config": {"prompt_ref": "her2.acute_management.v1", "citation_required": true}},
+      {"id": "fertility_protection", "type": "llm", "name": "生育力保护评估", "input_ports": ["in"], "output_ports": ["out"], "config": {"prompt_ref": "her2.fertility_protection.v1", "citation_required": true}},
+      {"id": "treatment_line_hr", "type": "llm", "name": "治疗线次与HR评估", "input_ports": ["in"], "output_ports": ["out"], "config": {"prompt_ref": "her2.treatment_line_hr.v1", "citation_required": true}},
+      {"id": "brain_metastasis", "type": "llm", "name": "脑转移评估", "input_ports": ["in"], "output_ports": ["out"], "config": {"prompt_ref": "her2.brain_metastasis.v1", "citation_required": true}},
+      {"id": "parallel_agents", "type": "parallel_agent", "name": "并行专科评估", "input_ports": ["in"], "output_ports": ["out"], "config": {"agents": ["acute_management", "fertility_protection", "treatment_line_hr", "brain_metastasis"]}},
+      {"id": "mdt_review", "type": "subworkflow", "name": "MDT复核", "input_ports": ["in"], "output_ports": ["out"], "config": {"workflow_ref": "breast-cancer-mdt-review", "human_review_required": true}},
+      {"id": "final_synthesis", "type": "llm", "name": "最终决策综合", "input_ports": ["in", "mdt"], "output_ports": ["out"], "config": {"prompt_ref": "her2.final_synthesis.v1", "citation_required": true, "show_evidence_links": true}},
+      {"id": "decision_output", "type": "output", "name": "决策建议与证据引用", "input_ports": ["in"], "output_ports": [], "config": {"transfer_fields": ["recommendation", "alternatives", "evidence", "missing_data", "review_status"]}}
+    ],
+    "edges": [
+      {"id": "e-input-pathology", "source": "patient_input", "target": "pathology_check", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-pathology-missing", "source": "pathology_check", "target": "collect_pathology", "source_port": "insufficient", "target_port": "in", "kind": "branch", "branch_label": "资料不足"},
+      {"id": "e-pathology-rag", "source": "pathology_check", "target": "guideline_rag", "source_port": "yes", "target_port": "in", "kind": "branch", "branch_label": "是"},
+      {"id": "e-pathology-treatment", "source": "pathology_check", "target": "treatment_line_hr", "source_port": "no", "target_port": "in", "kind": "branch", "branch_label": "否"},
+      {"id": "e-reassessment", "source": "collect_pathology", "target": "pathology_check", "source_port": "out", "target_port": "in", "kind": "reassessment", "loop_policy": {"max_iterations": 2, "exit_condition": "病理和免疫组化资料充分"}},
+      {"id": "e-rag-her2", "source": "guideline_rag", "target": "her2_decision", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-rag-acute", "source": "guideline_rag", "target": "acute_management", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-rag-fertility", "source": "guideline_rag", "target": "fertility_protection", "source_port": "fertility", "target_port": "in", "kind": "normal"},
+      {"id": "e-her2-treatment", "source": "her2_decision", "target": "treatment_line_hr", "source_port": "yes", "target_port": "in", "kind": "branch", "branch_label": "是"},
+      {"id": "e-her2-brain", "source": "her2_decision", "target": "brain_metastasis", "source_port": "no", "target_port": "in", "kind": "branch", "branch_label": "否"},
+      {"id": "e-her2-mdt", "source": "her2_decision", "target": "mdt_review", "source_port": "evidence", "target_port": "in", "kind": "branch", "branch_label": "证据不足"},
+      {"id": "e-acute-parallel", "source": "acute_management", "target": "parallel_agents", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-fertility-parallel", "source": "fertility_protection", "target": "parallel_agents", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-treatment-parallel", "source": "treatment_line_hr", "target": "parallel_agents", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-brain-parallel", "source": "brain_metastasis", "target": "parallel_agents", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-parallel-final", "source": "parallel_agents", "target": "final_synthesis", "source_port": "out", "target_port": "in", "kind": "normal"},
+      {"id": "e-mdt-final", "source": "mdt_review", "target": "final_synthesis", "source_port": "out", "target_port": "mdt", "kind": "normal"},
+      {"id": "e-final-output", "source": "final_synthesis", "target": "decision_output", "source_port": "out", "target_port": "in", "kind": "normal"}
+    ]
+  },
+  "extraction": {
+    "groups": [
+      {"id": "pathology", "label": "病理与分子资料", "required": ["her2"], "fields": [{"alias": "her2", "path": "$.病理.HER2", "type": "string"}, {"alias": "er", "path": "$.病理.ER", "type": "string"}, {"alias": "pr", "path": "$.病理.PR", "type": "string"}]},
+      {"id": "baseline", "label": "基线与风险资料", "required": [], "fields": [{"alias": "age", "path": "$.患者.年龄", "type": "integer"}, {"alias": "metastatic_sites", "path": "$.影像.转移部位", "type": "array"}]},
+      {"id": "treatment_background", "label": "既往治疗背景", "required": [], "fields": [{"alias": "prior_treatment", "path": "$.治疗史", "type": "array"}]}
+    ]
+  }
+}
