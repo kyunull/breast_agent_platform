@@ -40,7 +40,7 @@ class DraftRead(BaseModel):
     extraction: dict[str, Any]
     metadata: dict[str, Any]
     template_refs: list[str]
-    definition_sha256: str
+    definition_sha256: str | None
 
 
 class PublishedVersionRead(BaseModel):
@@ -50,5 +50,5 @@ class PublishedVersionRead(BaseModel):
     status: str
     definition: dict[str, Any]
     extraction: dict[str, Any]
-    definition_sha256: str
+    definition_sha256: str | None
     created_at: datetime

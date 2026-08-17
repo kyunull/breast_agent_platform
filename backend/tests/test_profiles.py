@@ -92,9 +92,7 @@ def test_technical_profile_values_are_validated_and_secret_values_rejected(clien
 
 def test_profile_rejects_nested_secret_values(client, admin_token):
     payload = _knowledge_payload("Nested Secret KB")
-    payload["technical_config"]["headers"] = {
-        "Authorization": "Bearer raw-secret-token"
-    }
+    payload["technical_config"]["headers"] = {"apiKey": "raw-secret-token"}
 
     response = client.post(
         "/api/v1/knowledge-profiles",
@@ -107,7 +105,13 @@ def test_profile_rejects_nested_secret_values(client, admin_token):
 
 def test_profile_rejects_hidden_parameters_in_medical_options(client, admin_token):
     payload = _knowledge_payload("Unsafe Medical Options")
-    payload["medical_options"] = {"scope": "active_guidelines", "top_k": 99}
+    payload["medical_options"] = {
+        "scope": "active_guidelines",
+        "provider": "openai",
+        "baseURL": "https://models.example.test/v1",
+        "topK": 99,
+        "apiKeyRef": "MODEL_API_KEY_REF",
+    }
 
     response = client.post(
         "/api/v1/knowledge-profiles",

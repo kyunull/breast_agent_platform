@@ -24,7 +24,7 @@ def test_publish_freezes_definition_and_creates_next_draft(client, medical_token
     published = client.post(f"/api/v1/workflows/{workflow_id}/publish", headers=headers)
     assert published.status_code == 201
     assert published.json()["version_number"] == 1
-    assert len(published.json()["definition_sha256"]) == 64
+    assert published.json()["definition_sha256"] is None
 
     draft = client.get(f"/api/v1/workflows/{workflow_id}/draft", headers=headers)
     assert draft.status_code == 200
@@ -108,7 +108,14 @@ def test_medical_user_cannot_store_hidden_parameters_in_workflow(
         json={"name": "Governed medical workflow"},
     ).json()["id"]
     graph = deepcopy(minimal_valid_graph)
-    graph["nodes"][0]["config"] = {"temperature": 0.8}
+    graph["nodes"][0]["config"] = {
+        "provider": "openai",
+        "model": "gpt-compatible",
+        "baseURL": "https://models.example.test/v1",
+        "topK": 5,
+        "apiKeyRef": "MODEL_API_KEY_REF",
+        "apiKey": "raw-secret-token",
+    }
 
     response = client.patch(
         f"/api/v1/workflows/{workflow_id}/draft",
@@ -140,6 +147,12 @@ def test_admin_can_store_technical_parameters_in_workflow(
     )
 
     assert response.status_code == 200
+    published = client.post(
+        f"/api/v1/workflows/{workflow_id}/publish",
+        headers=headers,
+    )
+    assert published.status_code == 201
+    assert len(published.json()["definition_sha256"]) == 64
 
 
 def test_admin_cannot_store_raw_secrets_in_workflow(
@@ -195,6 +208,7 @@ def test_medical_user_read_redacts_admin_configured_technical_parameters(
 
     assert response.status_code == 200
     assert response.json()["graph"]["nodes"][0]["config"] == {}
+    assert response.json()["definition_sha256"] is None
 
 
 def test_immutable_version_routes_require_workflow_access(
@@ -204,6 +218,12 @@ def test_immutable_version_routes_require_workflow_access(
     workflow_owned_by_other,
 ):
     path = f"/api/v1/workflows/{workflow_owned_by_other}/versions/1"
+
+    published = client.post(
+        f"/api/v1/workflows/{workflow_owned_by_other}/publish",
+        headers={"Authorization": f"Bearer {other_medical_token}"},
+    )
+    assert published.status_code == 201
 
     assert client.patch(path, json={}).status_code == 401
     assert client.patch(
@@ -216,6 +236,11 @@ def test_immutable_version_routes_require_workflow_access(
         headers={"Authorization": f"Bearer {other_medical_token}"},
         json={},
     ).status_code == 405
+    assert client.patch(
+        f"/api/v1/workflows/{workflow_owned_by_other}/versions/2",
+        headers={"Authorization": f"Bearer {other_medical_token}"},
+        json={},
+    ).status_code == 404
 
 
 def test_publish_integrity_race_returns_conflict(

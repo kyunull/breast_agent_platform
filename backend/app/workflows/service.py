@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
-from app.core.governance import validate_governed_payload
+from app.core.governance import validate_governed_payload, validate_medical_node_configs
 from app.extraction.schemas import ExtractionConfig
 from app.graph.schemas import WorkflowGraph
 from app.graph.validation import assert_valid_graph
@@ -79,6 +79,13 @@ def update_draft(
         allow_technical_parameters=allow_technical_parameters,
         path="workflow.patch",
     )
+    if payload.graph is not None and not allow_technical_parameters:
+        graph_payload = (
+            payload.graph.model_dump()
+            if isinstance(payload.graph, WorkflowGraph)
+            else payload.graph
+        )
+        validate_medical_node_configs(graph_payload)
     changed_fields: list[str] = []
     if payload.name is not None:
         workflow.name = payload.name
@@ -188,3 +195,17 @@ def list_published_versions(db: Session, workflow_id: str) -> list[WorkflowVersi
         WorkflowVersion.status == "published",
     ).order_by(WorkflowVersion.version_number)
     return list(db.scalars(statement))
+
+
+def get_published_version(
+    db: Session,
+    workflow_id: str,
+    version_number: int,
+) -> WorkflowVersion | None:
+    return db.scalar(
+        select(WorkflowVersion).where(
+            WorkflowVersion.workflow_id == workflow_id,
+            WorkflowVersion.version_number == version_number,
+            WorkflowVersion.status == "published",
+        )
+    )

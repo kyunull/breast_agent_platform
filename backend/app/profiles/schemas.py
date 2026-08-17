@@ -3,7 +3,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.governance import validate_governed_payload
+from app.core.governance import (
+    MEDICAL_PROFILE_OPTION_KEYS,
+    validate_allowed_keys,
+    validate_governed_payload,
+)
 
 _SUPPORTED_PROVIDERS = {"knowledgebase", "openai", "openai_compatible", "local"}
 _SECRET_KEYS = {"api_key", "password", "token", "secret", "access_token"}
@@ -59,6 +63,11 @@ class ProfileCreate(BaseModel):
     @model_validator(mode="after")
     def validate_config(self) -> "ProfileCreate":
         _validate_technical_config(self.technical_config)
+        validate_allowed_keys(
+            self.medical_options,
+            allowed_keys=MEDICAL_PROFILE_OPTION_KEYS,
+            path="medical_options",
+        )
         validate_governed_payload(
             self.medical_options,
             allow_technical_parameters=False,
@@ -80,6 +89,11 @@ class ProfilePatch(BaseModel):
         if self.technical_config is not None:
             _validate_technical_config(self.technical_config)
         if self.medical_options is not None:
+            validate_allowed_keys(
+                self.medical_options,
+                allowed_keys=MEDICAL_PROFILE_OPTION_KEYS,
+                path="medical_options",
+            )
             validate_governed_payload(
                 self.medical_options,
                 allow_technical_parameters=False,

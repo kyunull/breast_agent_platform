@@ -21,6 +21,7 @@ from app.workflows.schemas import (
 from app.workflows.service import (
     create_workflow,
     get_draft,
+    get_published_version,
     get_workflow,
     list_published_versions,
     publish_workflow,
@@ -60,7 +61,7 @@ def _draft_read(workflow: Workflow, draft: WorkflowVersion, user: User) -> Draft
         extraction=extraction,
         metadata=definition.get("metadata", {}),
         template_refs=definition.get("template_refs", []),
-        definition_sha256=draft.definition_sha256,
+        definition_sha256=(draft.definition_sha256 if user.role == "admin_developer" else None),
     )
 
 
@@ -190,7 +191,11 @@ def publish(
             if current_user.role == "admin_developer"
             else redact_hidden_parameters(published.extraction_json)
         ),
-        definition_sha256=published.definition_sha256,
+        definition_sha256=(
+            published.definition_sha256
+            if current_user.role == "admin_developer"
+            else None
+        ),
         created_at=published.created_at,
     )
 
@@ -218,7 +223,11 @@ def versions(
                 if current_user.role == "admin_developer"
                 else redact_hidden_parameters(version.extraction_json)
             ),
-            definition_sha256=version.definition_sha256,
+            definition_sha256=(
+                version.definition_sha256
+                if current_user.role == "admin_developer"
+                else None
+            ),
             created_at=version.created_at,
         )
         for version in list_published_versions(db, workflow.id)
@@ -233,6 +242,8 @@ def reject_published_patch(
     db: Annotated[Session, Depends(get_request_db)],
 ) -> Response:
     _require_workflow(db, workflow_id, current_user)
+    if get_published_version(db, workflow_id, version_number) is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "version not found"})
     raise HTTPException(status_code=405, detail={"code": "immutable_version", "message": "published versions are immutable"})
 
 
@@ -244,4 +255,6 @@ def reject_published_delete(
     db: Annotated[Session, Depends(get_request_db)],
 ) -> Response:
     _require_workflow(db, workflow_id, current_user)
+    if get_published_version(db, workflow_id, version_number) is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "version not found"})
     raise HTTPException(status_code=405, detail={"code": "immutable_version", "message": "published versions are immutable"})
