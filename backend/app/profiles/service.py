@@ -1,5 +1,3 @@
-from typing import TypeVar
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,10 +6,7 @@ from app.profiles.models import KnowledgeProfile, ModelProfile
 from app.profiles.schemas import ProfileCreate, ProfilePatch
 
 
-ProfileModel = TypeVar("ProfileModel", ModelProfile, KnowledgeProfile)
-
-
-def list_profiles(
+def list_profiles[ProfileModel: (ModelProfile, KnowledgeProfile)](
     db: Session,
     model: type[ProfileModel],
     *,
@@ -23,11 +18,15 @@ def list_profiles(
     return list(db.scalars(statement))
 
 
-def get_profile(db: Session, model: type[ProfileModel], profile_id: str) -> ProfileModel | None:
+def get_profile[ProfileModel: (ModelProfile, KnowledgeProfile)](
+    db: Session,
+    model: type[ProfileModel],
+    profile_id: str,
+) -> ProfileModel | None:
     return db.get(model, profile_id)
 
 
-def create_profile(
+def create_profile[ProfileModel: (ModelProfile, KnowledgeProfile)](
     db: Session,
     model: type[ProfileModel],
     payload: ProfileCreate,
@@ -54,7 +53,7 @@ def create_profile(
     return profile
 
 
-def update_profile(
+def update_profile[ProfileModel: (ModelProfile, KnowledgeProfile)](
     db: Session,
     model: type[ProfileModel],
     profile: ProfileModel,

@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.audit.service import record_audit
+from app.core.governance import validate_governed_payload
 from app.extraction.schemas import ExtractionConfig
 from app.graph.schemas import WorkflowGraph
 from app.graph.validation import assert_valid_graph
@@ -27,8 +28,16 @@ def get_workflow(db: Session, workflow_id: str) -> Workflow | None:
     return db.get(Workflow, workflow_id)
 
 
-def get_draft(db: Session, workflow_id: str) -> WorkflowVersion | None:
-    return db.scalar(_draft_query(workflow_id))
+def get_draft(
+    db: Session,
+    workflow_id: str,
+    *,
+    for_update: bool = False,
+) -> WorkflowVersion | None:
+    statement = _draft_query(workflow_id)
+    if for_update:
+        statement = statement.with_for_update()
+    return db.scalar(statement)
 
 
 def create_workflow(db: Session, payload: WorkflowCreate, actor_id: str) -> Workflow:
@@ -62,7 +71,14 @@ def update_draft(
     draft: WorkflowVersion,
     payload: WorkflowDraftPatch,
     actor_id: str,
+    *,
+    allow_technical_parameters: bool = False,
 ) -> WorkflowVersion:
+    validate_governed_payload(
+        payload.model_dump(exclude_unset=True),
+        allow_technical_parameters=allow_technical_parameters,
+        path="workflow.patch",
+    )
     changed_fields: list[str] = []
     if payload.name is not None:
         workflow.name = payload.name
@@ -82,11 +98,23 @@ def update_draft(
     if payload.template_refs is not None:
         definition["template_refs"] = payload.template_refs
         changed_fields.append("template_refs")
+    extraction_json = draft.extraction_json
+    if payload.extraction is not None:
+        extraction_json = payload.extraction.model_dump()
+        changed_fields.append("extraction")
+    validate_governed_payload(
+        {
+            "name": workflow.name,
+            "description": workflow.description,
+            "definition": definition,
+            "extraction": extraction_json,
+        },
+        allow_technical_parameters=True,
+        path="workflow",
+    )
     if changed_fields:
         draft.definition_json = definition
-    if payload.extraction is not None:
-        draft.extraction_json = payload.extraction.model_dump()
-        changed_fields.append("extraction")
+        draft.extraction_json = extraction_json
     draft.definition_sha256 = canonical_definition_sha256(draft.definition_json, draft.extraction_json)
     if changed_fields:
         record_audit(
@@ -112,6 +140,16 @@ def publish_workflow(
     assert_valid_graph(graph)
     definition = deepcopy(draft.definition_json)
     extraction_json = extraction.model_dump()
+    validate_governed_payload(
+        {
+            "name": workflow.name,
+            "description": workflow.description,
+            "definition": definition,
+            "extraction": extraction_json,
+        },
+        allow_technical_parameters=True,
+        path="workflow",
+    )
     draft.version_number = int(
         db.scalar(
             select(func.coalesce(func.max(WorkflowVersion.version_number), 0)).where(

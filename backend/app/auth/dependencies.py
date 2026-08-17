@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_request_db
 from app.core.security import hash_access_token
 from app.users.models import AuthSession, User
-
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -23,7 +22,7 @@ def _unauthorized() -> HTTPException:
 
 
 def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def get_current_session(
@@ -42,7 +41,7 @@ def get_current_session(
     if (
         session is None
         or session.revoked_at is not None
-        or _aware(session.expires_at) <= datetime.now(timezone.utc)
+        or _aware(session.expires_at) <= datetime.now(UTC)
         or session.user is None
         or not session.user.is_active
     ):

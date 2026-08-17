@@ -7,10 +7,17 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_request_db
+from app.core.governance import redact_hidden_parameters
 from app.graph.schemas import GraphValidationError
 from app.users.models import User
 from app.workflows.models import Workflow, WorkflowVersion
-from app.workflows.schemas import DraftRead, PublishedVersionRead, WorkflowCreate, WorkflowDraftPatch, WorkflowRead
+from app.workflows.schemas import (
+    DraftRead,
+    PublishedVersionRead,
+    WorkflowCreate,
+    WorkflowDraftPatch,
+    WorkflowRead,
+)
 from app.workflows.service import (
     create_workflow,
     get_draft,
@@ -19,7 +26,6 @@ from app.workflows.service import (
     publish_workflow,
     update_draft,
 )
-
 
 router = APIRouter(prefix="/api/v1/workflows", tags=["workflows"])
 
@@ -37,8 +43,12 @@ def _require_workflow(db: Session, workflow_id: str, user: User) -> Workflow:
     return workflow
 
 
-def _draft_read(workflow: Workflow, draft: WorkflowVersion) -> DraftRead:
+def _draft_read(workflow: Workflow, draft: WorkflowVersion, user: User) -> DraftRead:
     definition = draft.definition_json
+    extraction = draft.extraction_json
+    if user.role != "admin_developer":
+        definition = redact_hidden_parameters(definition)
+        extraction = redact_hidden_parameters(extraction)
     return DraftRead(
         id=draft.id,
         workflow_id=workflow.id,
@@ -47,7 +57,7 @@ def _draft_read(workflow: Workflow, draft: WorkflowVersion) -> DraftRead:
         name=workflow.name,
         description=workflow.description,
         graph=definition.get("graph", {"nodes": [], "edges": []}),
-        extraction=draft.extraction_json,
+        extraction=extraction,
         metadata=definition.get("metadata", {}),
         template_refs=definition.get("template_refs", []),
         definition_sha256=draft.definition_sha256,
@@ -106,7 +116,7 @@ def read_draft(
     draft = get_draft(db, workflow.id)
     if draft is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "draft not found"})
-    return _draft_read(workflow, draft)
+    return _draft_read(workflow, draft, current_user)
 
 
 @router.patch("/{workflow_id}/draft", response_model=DraftRead)
@@ -120,9 +130,16 @@ def patch_draft(
     draft = get_draft(db, workflow.id)
     if draft is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "draft not found"})
-    update_draft(db, workflow, draft, payload, current_user.id)
+    update_draft(
+        db,
+        workflow,
+        draft,
+        payload,
+        current_user.id,
+        allow_technical_parameters=current_user.role == "admin_developer",
+    )
     db.commit()
-    return _draft_read(workflow, draft)
+    return _draft_read(workflow, draft, current_user)
 
 
 @router.post("/{workflow_id}/publish", response_model=PublishedVersionRead, status_code=status.HTTP_201_CREATED)
@@ -132,12 +149,26 @@ def publish(
     db: Annotated[Session, Depends(get_request_db)],
 ) -> PublishedVersionRead:
     workflow = _require_workflow(db, workflow_id, current_user)
-    draft = get_draft(db, workflow.id)
+    draft = get_draft(db, workflow.id, for_update=True)
     if draft is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "draft not found"})
     try:
-        published, _ = publish_workflow(db, workflow, draft, current_user.id)
+        published, _ = publish_workflow(
+            db,
+            workflow,
+            draft,
+            current_user.id,
+        )
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "publish_conflict",
+                "message": "workflow was published concurrently; reload the draft and retry",
+            },
+        ) from exc
     except (ValueError, GraphValidationError) as exc:
         db.rollback()
         detail: Any = {"code": "invalid_workflow", "message": str(exc)}
@@ -149,8 +180,16 @@ def publish(
         workflow_id=published.workflow_id,
         version_number=published.version_number,
         status=published.status,
-        definition=published.definition_json,
-        extraction=published.extraction_json,
+        definition=(
+            published.definition_json
+            if current_user.role == "admin_developer"
+            else redact_hidden_parameters(published.definition_json)
+        ),
+        extraction=(
+            published.extraction_json
+            if current_user.role == "admin_developer"
+            else redact_hidden_parameters(published.extraction_json)
+        ),
         definition_sha256=published.definition_sha256,
         created_at=published.created_at,
     )
@@ -169,8 +208,16 @@ def versions(
             workflow_id=workflow.id,
             version_number=version.version_number,
             status=version.status,
-            definition=version.definition_json,
-            extraction=version.extraction_json,
+            definition=(
+                version.definition_json
+                if current_user.role == "admin_developer"
+                else redact_hidden_parameters(version.definition_json)
+            ),
+            extraction=(
+                version.extraction_json
+                if current_user.role == "admin_developer"
+                else redact_hidden_parameters(version.extraction_json)
+            ),
             definition_sha256=version.definition_sha256,
             created_at=version.created_at,
         )
@@ -179,10 +226,22 @@ def versions(
 
 
 @router.patch("/{workflow_id}/versions/{version_number}")
-def reject_published_patch(workflow_id: str, version_number: int) -> Response:
+def reject_published_patch(
+    workflow_id: str,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_request_db)],
+) -> Response:
+    _require_workflow(db, workflow_id, current_user)
     raise HTTPException(status_code=405, detail={"code": "immutable_version", "message": "published versions are immutable"})
 
 
 @router.delete("/{workflow_id}/versions/{version_number}")
-def reject_published_delete(workflow_id: str, version_number: int) -> Response:
+def reject_published_delete(
+    workflow_id: str,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_request_db)],
+) -> Response:
+    _require_workflow(db, workflow_id, current_user)
     raise HTTPException(status_code=405, detail={"code": "immutable_version", "message": "published versions are immutable"})

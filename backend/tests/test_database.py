@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.models import AuditLog
@@ -29,6 +29,25 @@ def test_metadata_contains_governance_and_workflow_tables(tmp_path) -> None:
         "workflow_version",
         "audit_log",
     }
+
+
+def test_sqlite_enforces_foreign_key_integrity(tmp_path) -> None:
+    initialize_models()
+    engine = get_engine(Settings(database_url=f"sqlite:///{tmp_path / 'foreign-keys.db'}"))
+    Base.metadata.create_all(engine)
+
+    with engine.connect() as connection:
+        assert connection.scalar(text("PRAGMA foreign_keys")) == 1
+
+    db = session_factory(engine)()
+    db.add(
+        Workflow(
+            owner_id="97fd7ed7-ecfb-41ca-8f9a-8512e44ea7f9",
+            name="dangling owner",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.flush()
 
 
 def test_record_audit_flushes_without_sensitive_metadata(tmp_path) -> None:
@@ -90,6 +109,7 @@ def test_model_registry_initializes_only_when_requested() -> None:
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -125,6 +145,7 @@ def test_model_modules_can_be_imported_before_database_registry() -> None:
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -185,7 +206,7 @@ def test_record_audit_drops_nested_and_scalar_secret_values(tmp_path) -> None:
 
     audit = record_audit(
         db,
-        actor_id="97fd7ed7-ecfb-41ca-8f9a-8512e44ea7f9",
+        actor_id=None,
         action="workflow.update",
         entity_type="workflow",
         entity_id="workflow-1",

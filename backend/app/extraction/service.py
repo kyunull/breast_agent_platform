@@ -1,8 +1,8 @@
-from collections.abc import Mapping
-from datetime import datetime
 import re
+from collections.abc import Mapping
 from typing import Any
 
+from jsonpath_ng.exceptions import JsonPathLexerError, JsonPathParserError
 from jsonpath_ng.ext import parse
 
 from app.extraction.schemas import (
@@ -13,7 +13,6 @@ from app.extraction.schemas import (
     SufficiencyResult,
     _parse_order_value,
 )
-
 
 _MISSING = object()
 _DOT_FIELD = re.compile(r"\.([^\.\[\]]+)")
@@ -88,9 +87,7 @@ def _time_in_window(item: Any, selection: ArraySelection) -> bool:
         current = _parse_order_value(value)
         if selection.time_from is not None and current < _parse_order_value(selection.time_from):
             return False
-        if selection.time_to is not None and current > _parse_order_value(selection.time_to):
-            return False
-        return True
+        return selection.time_to is None or current <= _parse_order_value(selection.time_to)
     except (TypeError, ValueError):
         return False
 
@@ -131,7 +128,7 @@ def _convert(value: Any, field: ExtractionField) -> Any:
 def _extract_field(payload: dict[str, Any], field: ExtractionField) -> tuple[Any, str | None]:
     try:
         matches = _jsonpath_matches(payload, field.path)
-    except Exception as exc:
+    except (JsonPathLexerError, JsonPathParserError) as exc:
         return _MISSING, f"invalid JSONPath: {exc}"
     if field.array is not None:
         try:
@@ -163,18 +160,25 @@ def preview_extraction(payload: dict[str, Any], config: ExtractionConfig) -> Ext
     for group in config.groups:
         values: dict[str, Any] = {}
         group_errors: dict[str, str] = {}
+        extracted_aliases: set[str] = set()
         for field in group.fields:
             value, error = _extract_field(payload, field)
             if value is _MISSING:
-                if field.alias not in group.required and not field.required and field.default is not None:
-                    values[field.alias] = field.default
-                elif field.default is not None:
+                if field.default is not None:
                     values[field.alias] = field.default
                 if error:
                     group_errors[field.alias] = error
             else:
                 values[field.alias] = value
-        required_missing = [alias for alias in group.required if alias not in values]
+                extracted_aliases.add(field.alias)
+        required_aliases = [
+            field.alias
+            for field in group.fields
+            if field.required or field.alias in group.required
+        ]
+        required_missing = [
+            alias for alias in required_aliases if alias not in extracted_aliases
+        ]
         groups[group.id] = values
         missing[group.id] = required_missing
         errors[group.id] = group_errors

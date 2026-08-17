@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
 
-
 _UUID_METADATA_KEYS = {
     "actor_id",
     "entity_id",

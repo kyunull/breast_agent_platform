@@ -4,7 +4,10 @@ import getpass
 import sys
 from pathlib import Path
 
+from alembic.config import Config
 from sqlalchemy import select
+
+from alembic import command
 
 backend_dir = Path(__file__).resolve().parents[1]
 if str(backend_dir) not in sys.path:
@@ -12,16 +15,21 @@ if str(backend_dir) not in sys.path:
 
 from app.audit.service import record_audit
 from app.core.config import Settings
-from app.core.database import Base, get_engine, initialize_models, session_factory
+from app.core.database import get_engine, session_factory
 from app.core.security import hash_password
 from app.users.models import User
 
 
+def upgrade_database(settings: Settings) -> None:
+    alembic_config = Config(str(backend_dir / "alembic.ini"))
+    alembic_config.attributes["database_url"] = settings.database_url
+    command.upgrade(alembic_config, "head")
+
+
 def main() -> int:
     settings = Settings()
-    initialize_models()
+    upgrade_database(settings)
     engine = get_engine(settings)
-    Base.metadata.create_all(engine)
     db = session_factory(engine)()
     try:
         username = input("Admin username: ").strip()

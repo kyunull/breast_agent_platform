@@ -7,15 +7,16 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, require_role
 from app.auth.schemas import UserRead
 from app.core.database import get_request_db
+from app.users.models import User
 from app.users.schemas import UserCreate
 from app.users.service import create_user
 
-
 router = APIRouter(prefix="/api/v1", tags=["users"])
+_admin_user = require_role("admin_developer")
 
 
 @router.get("/me", response_model=UserRead)
-def me(current_user=Depends(get_current_user)) -> UserRead:
+def me(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user
 
 
@@ -23,8 +24,8 @@ def me(current_user=Depends(get_current_user)) -> UserRead:
 def create_user_endpoint(
     payload: UserCreate,
     db: Annotated[Session, Depends(get_request_db)],
-    current_user=Depends(require_role("admin_developer")),
-) -> UserRead:
+    current_user: Annotated[User, Depends(_admin_user)],
+) -> User:
     try:
         user = create_user(db, payload, actor_id=current_user.id)
         db.commit()

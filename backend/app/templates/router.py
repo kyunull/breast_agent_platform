@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,6 @@ from app.graph.schemas import WorkflowGraph
 from app.users.models import User
 from app.workflows.schemas import WorkflowCreate, WorkflowDraftPatch, WorkflowRead
 from app.workflows.service import create_workflow, get_draft, update_draft
-
 
 router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
 
@@ -70,6 +69,7 @@ def clone_her2_template(
                 metadata=template["metadata"] | {"review_warning": template["warning"]},
             ),
             current_user.id,
+            allow_technical_parameters=current_user.role == "admin_developer",
         )
         db.commit()
     except Exception:

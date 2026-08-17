@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from app.audit.models import AuditLog
 from app.users.models import AuthSession
 
 
@@ -65,6 +66,14 @@ def test_logout_revokes_opaque_session_and_raw_token_is_not_stored(client, medic
         assert sessions
         assert all(session.token_hash != medical_token for session in sessions)
         assert all(len(session.token_hash) == 64 for session in sessions)
+        audit_actions = list(
+            db.scalars(
+                select(AuditLog.action).where(
+                    AuditLog.action.in_(["auth.login", "auth.logout"])
+                )
+            )
+        )
+        assert audit_actions == ["auth.login", "auth.logout"]
     finally:
         db.close()
 
@@ -107,5 +116,5 @@ def test_login_uses_application_session_ttl(client, seed_users):
     )
     assert response.status_code == 200
     expires_at = datetime.fromisoformat(response.json()["expires_at"])
-    remaining_seconds = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    remaining_seconds = (expires_at - datetime.now(UTC)).total_seconds()
     assert 3590 <= remaining_seconds <= 3610

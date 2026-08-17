@@ -3,9 +3,9 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.core.database import Base
+from app.core.security import hash_password
 from app.main import create_app
 from app.users.models import User
-from app.core.security import hash_password
 
 
 @pytest.fixture

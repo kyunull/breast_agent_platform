@@ -4,12 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.core.database import get_request_db
 from app.extraction.schemas import ExtractionPreview, ExtractionPreviewRequest
 from app.extraction.service import preview_extraction
-from app.core.database import get_request_db
 from app.users.models import User
 from app.workflows.service import get_workflow
-
 
 router = APIRouter(prefix="/api/v1/workflows", tags=["extraction"])
 

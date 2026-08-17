@@ -3,7 +3,6 @@ import secrets
 
 from pwdlib import PasswordHash
 
-
 _password_hash = PasswordHash.recommended()
 
 

@@ -1,3 +1,11 @@
+from copy import deepcopy
+
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
+
+from app.workflows import router as workflow_router
+
+
 def test_publish_freezes_definition_and_creates_next_draft(client, medical_token, minimal_valid_graph):
     headers = {"Authorization": f"Bearer {medical_token}"}
     created = client.post(
@@ -86,3 +94,156 @@ def test_publish_hash_is_stable_for_same_definition(client, medical_token, minim
     client.post(f"/api/v1/workflows/{workflow_id}/publish", headers=headers)
     versions = client.get(f"/api/v1/workflows/{workflow_id}/versions", headers=headers).json()
     assert versions[0]["definition_sha256"] == first["definition_sha256"]
+
+
+def test_medical_user_cannot_store_hidden_parameters_in_workflow(
+    client,
+    medical_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Governed medical workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {"temperature": 0.8}
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_can_store_technical_parameters_in_workflow(
+    client,
+    admin_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Governed admin workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {"temperature": 0.2, "top_k": 5}
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 200
+
+
+def test_admin_cannot_store_raw_secrets_in_workflow(
+    client,
+    admin_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Secret rejection workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {"headers": {"Authorization": "Bearer raw-token"}}
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 422
+
+
+def test_medical_user_read_redacts_admin_configured_technical_parameters(
+    client,
+    admin_token,
+    other_medical_token,
+    workflow_owned_by_other,
+    minimal_valid_graph,
+):
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {"temperature": 0.2, "top_k": 5}
+    updated = client.patch(
+        f"/api/v1/workflows/{workflow_owned_by_other}/draft",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"graph": graph},
+    )
+    assert updated.status_code == 200
+
+    medical_update = client.patch(
+        f"/api/v1/workflows/{workflow_owned_by_other}/draft",
+        headers={"Authorization": f"Bearer {other_medical_token}"},
+        json={"description": "medical revision"},
+    )
+    assert medical_update.status_code == 200
+
+    response = client.get(
+        f"/api/v1/workflows/{workflow_owned_by_other}/draft",
+        headers={"Authorization": f"Bearer {other_medical_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["graph"]["nodes"][0]["config"] == {}
+
+
+def test_immutable_version_routes_require_workflow_access(
+    client,
+    medical_token,
+    other_medical_token,
+    workflow_owned_by_other,
+):
+    path = f"/api/v1/workflows/{workflow_owned_by_other}/versions/1"
+
+    assert client.patch(path, json={}).status_code == 401
+    assert client.patch(
+        path,
+        headers={"Authorization": f"Bearer {medical_token}"},
+        json={},
+    ).status_code == 403
+    assert client.patch(
+        path,
+        headers={"Authorization": f"Bearer {other_medical_token}"},
+        json={},
+    ).status_code == 405
+
+
+def test_publish_integrity_race_returns_conflict(
+    client,
+    medical_token,
+    minimal_valid_graph,
+    monkeypatch,
+):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Concurrent publish"},
+    ).json()["id"]
+    client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": minimal_valid_graph},
+    )
+
+    def raise_integrity_error(*args, **kwargs):
+        raise IntegrityError("concurrent publish", {}, Exception("unique conflict"))
+
+    monkeypatch.setattr(workflow_router, "publish_workflow", raise_integrity_error)
+    with TestClient(client.app, raise_server_exceptions=False) as race_client:
+        response = race_client.post(
+            f"/api/v1/workflows/{workflow_id}/publish",
+            headers=headers,
+        )
+
+    assert response.status_code == 409

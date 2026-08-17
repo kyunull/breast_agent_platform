@@ -1,6 +1,10 @@
 from pathlib import Path
 
+from sqlalchemy import inspect
+
 from app.core.config import Settings
+from app.core.database import get_engine
+from scripts.create_admin import upgrade_database
 
 
 def test_default_database_is_local_sqlite() -> None:
@@ -29,3 +33,13 @@ def test_startup_assets_are_checked_in() -> None:
         "scripts/run_backend.sh",
     ):
         assert (backend_dir / relative_path).is_file(), relative_path
+
+
+def test_admin_bootstrap_uses_idempotent_alembic_migrations(tmp_path) -> None:
+    settings = Settings(database_url=f"sqlite:///{tmp_path / 'bootstrap.db'}")
+
+    upgrade_database(settings)
+    upgrade_database(settings)
+
+    tables = set(inspect(get_engine(settings)).get_table_names())
+    assert {"alembic_version", "app_user", "workflow_version"} <= tables

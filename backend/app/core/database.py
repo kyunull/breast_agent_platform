@@ -1,7 +1,8 @@
 from collections.abc import Generator
+from typing import Any
 
 from fastapi import Request
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import Settings
@@ -24,18 +25,29 @@ def initialize_models() -> None:
     _models_initialized = True
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection: Any, _: Any) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
 def get_engine(settings: Settings) -> Engine:
     kwargs = (
         {"connect_args": {"check_same_thread": False}}
         if settings.database_url.startswith("sqlite")
         else {}
     )
-    return create_engine(
+    engine = create_engine(
         settings.database_url,
         future=True,
         pool_pre_ping=True,
         **kwargs,
     )
+    if settings.database_url.startswith("sqlite"):
+        event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    return engine
 
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:

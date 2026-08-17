@@ -1,3 +1,6 @@
+from app.profiles.models import KnowledgeProfile
+
+
 def _knowledge_payload(name="Breast KB"):
     return {
         "name": name,
@@ -85,6 +88,63 @@ def test_technical_profile_values_are_validated_and_secret_values_rejected(clien
         headers={"Authorization": f"Bearer {admin_token}"},
         json=secret_value,
     ).status_code == 422
+
+
+def test_profile_rejects_nested_secret_values(client, admin_token):
+    payload = _knowledge_payload("Nested Secret KB")
+    payload["technical_config"]["headers"] = {
+        "Authorization": "Bearer raw-secret-token"
+    }
+
+    response = client.post(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_profile_rejects_hidden_parameters_in_medical_options(client, admin_token):
+    payload = _knowledge_payload("Unsafe Medical Options")
+    payload["medical_options"] = {"scope": "active_guidelines", "top_k": 99}
+
+    response = client.post(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_medical_profile_read_redacts_legacy_hidden_options(
+    client,
+    seed_users,
+    medical_token,
+):
+    db = client.app.state.db_factory()
+    try:
+        db.add(
+            KnowledgeProfile(
+                name="Legacy unsafe profile",
+                technical_config_json={},
+                medical_options_json={"scope": "guidelines", "top_k": 99},
+                exposed_to_medical=True,
+                is_active=True,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {medical_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["medical_options"] == {"scope": "guidelines"}
 
 
 def test_medical_user_sees_only_active_exposed_profiles(client, admin_token, medical_token):

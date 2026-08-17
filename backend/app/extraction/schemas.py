@@ -3,7 +3,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 ValueType = Literal["string", "number", "integer", "boolean", "object", "array", "any"]
 TakeMode = Literal["all", "first", "latest"]
 SortOrder = Literal["asc", "desc"]
@@ -99,7 +98,7 @@ def _parse_order_value(value: Any) -> datetime | float | str:
         return float(value)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return datetime.fromisoformat(value)
         except ValueError:
             return value
     raise TypeError("time values must be ISO dates, numbers, or strings")

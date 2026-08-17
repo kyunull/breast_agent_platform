@@ -2,7 +2,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 NodeType = Literal[
     "input",
     "condition",

@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.governance import validate_governed_payload
 
 _SUPPORTED_PROVIDERS = {"knowledgebase", "openai", "openai_compatible", "local"}
 _SECRET_KEYS = {"api_key", "password", "token", "secret", "access_token"}
@@ -43,6 +44,7 @@ def _validate_technical_config(config: dict[str, Any]) -> dict[str, Any]:
             not isinstance(value, str) or not _SECRET_REF_PATTERN.fullmatch(value)
         ):
             raise ValueError("secret references must use an uppercase *_REF name")
+    validate_governed_payload(config, allow_technical_parameters=True, path="technical_config")
     return config
 
 
@@ -57,6 +59,11 @@ class ProfileCreate(BaseModel):
     @model_validator(mode="after")
     def validate_config(self) -> "ProfileCreate":
         _validate_technical_config(self.technical_config)
+        validate_governed_payload(
+            self.medical_options,
+            allow_technical_parameters=False,
+            path="medical_options",
+        )
         return self
 
 
@@ -72,6 +79,12 @@ class ProfilePatch(BaseModel):
     def validate_config(self) -> "ProfilePatch":
         if self.technical_config is not None:
             _validate_technical_config(self.technical_config)
+        if self.medical_options is not None:
+            validate_governed_payload(
+                self.medical_options,
+                allow_technical_parameters=False,
+                path="medical_options",
+            )
         return self
 
 

@@ -58,6 +58,60 @@ def test_preview_reports_missing_required_field():
     assert result.sufficiency["pathology"].status == "insufficient"
 
 
+def test_field_level_required_flag_marks_missing_evidence_as_insufficient():
+    config = ExtractionConfig.model_validate(
+        {
+            "groups": [
+                {
+                    "id": "pathology",
+                    "label": "病理信息",
+                    "fields": [
+                        {
+                            "alias": "her2",
+                            "path": "$.病理.HER2",
+                            "type": "string",
+                            "required": True,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    result = preview_extraction({}, config)
+
+    assert result.missing["pathology"] == ["her2"]
+    assert result.sufficiency["pathology"].status == "insufficient"
+
+
+def test_default_value_does_not_satisfy_required_clinical_evidence():
+    config = ExtractionConfig.model_validate(
+        {
+            "groups": [
+                {
+                    "id": "pathology",
+                    "label": "病理信息",
+                    "required": ["her2"],
+                    "fields": [
+                        {
+                            "alias": "her2",
+                            "path": "$.病理.HER2",
+                            "type": "string",
+                            "default": "待补充",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    result = preview_extraction({}, config)
+
+    assert result.groups["pathology"]["her2"] == "待补充"
+    assert result.missing["pathology"] == ["her2"]
+    assert result.sufficiency["pathology"].status == "insufficient"
+
+
 def test_array_filter_time_window_and_all_preserve_order():
     payload = {
         "records": [
