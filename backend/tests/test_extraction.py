@@ -143,8 +143,15 @@ def test_array_sort_errors_are_reported_without_aborting_other_fields():
 
 
 def test_extraction_preview_route_accepts_sample_json(client, medical_token):
+    created = client.post(
+        "/api/v1/workflows",
+        headers={"Authorization": f"Bearer {medical_token}"},
+        json={"name": "Preview workflow"},
+    )
+    assert created.status_code == 201
+    workflow_id = created.json()["id"]
     response = client.post(
-        "/api/v1/workflows/demo/draft/extraction/preview",
+        f"/api/v1/workflows/{workflow_id}/draft/extraction/preview",
         headers={"Authorization": f"Bearer {medical_token}"},
         json={
             "sample_json": {"病理": {"HER2": "IHC 3+"}},

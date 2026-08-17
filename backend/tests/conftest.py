@@ -76,3 +76,42 @@ def other_medical_token(client, seed_users):
     finally:
         db.close()
     return _login(client, "other-doctor", "other-pass")
+
+
+@pytest.fixture
+def minimal_valid_graph():
+    return {
+        "nodes": [
+            {"id": "input", "type": "input", "name": "输入", "input_ports": [], "output_ports": ["out"]},
+            {"id": "output", "type": "output", "name": "输出", "input_ports": ["in"], "output_ports": []},
+        ],
+        "edges": [
+            {
+                "id": "e1",
+                "source": "input",
+                "target": "output",
+                "source_port": "out",
+                "target_port": "in",
+                "kind": "normal",
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def workflow_owned_by_other(client, other_medical_token, minimal_valid_graph):
+    headers = {"Authorization": f"Bearer {other_medical_token}"}
+    created = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Other workflow", "description": "fixture"},
+    )
+    assert created.status_code == 201
+    workflow_id = created.json()["id"]
+    patched = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": minimal_valid_graph},
+    )
+    assert patched.status_code == 200
+    return workflow_id
