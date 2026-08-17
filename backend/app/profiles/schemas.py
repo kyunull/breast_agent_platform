@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.governance import (
     MEDICAL_PROFILE_OPTION_KEYS,
+    normalize_governance_key,
     validate_allowed_keys,
     validate_governed_payload,
 )
@@ -15,24 +16,31 @@ _SECRET_REF_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_REF$")
 
 
 def _validate_technical_config(config: dict[str, Any]) -> dict[str, Any]:
-    provider = config.get("provider")
+    normalized_config: dict[str, Any] = {}
+    for key, value in config.items():
+        normalized = normalize_governance_key(key)
+        if normalized in normalized_config:
+            raise ValueError(f"duplicate technical configuration field: {normalized}")
+        normalized_config[normalized] = value
+
+    provider = normalized_config.get("provider")
     if provider is not None and provider not in _SUPPORTED_PROVIDERS:
         raise ValueError("unsupported provider")
 
-    top_k = config.get("top_k")
+    top_k = normalized_config.get("top_k")
     if top_k is not None and (not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1):
         raise ValueError("top_k must be at least 1")
-    score_threshold = config.get("score_threshold")
+    score_threshold = normalized_config.get("score_threshold")
     if score_threshold is not None and (
         not isinstance(score_threshold, (int, float))
         or isinstance(score_threshold, bool)
         or not 0 <= score_threshold <= 1
     ):
         raise ValueError("score_threshold must be between 0 and 1")
-    retries = config.get("retries")
+    retries = normalized_config.get("retries")
     if retries is not None and (not isinstance(retries, int) or isinstance(retries, bool) or retries < 0):
         raise ValueError("retries must be non-negative")
-    timeout = config.get("timeout")
+    timeout = normalized_config.get("timeout")
     if timeout is not None and (
         not isinstance(timeout, (int, float))
         or isinstance(timeout, bool)
@@ -40,16 +48,19 @@ def _validate_technical_config(config: dict[str, Any]) -> dict[str, Any]:
     ):
         raise ValueError("timeout must be positive")
 
-    for key, value in config.items():
-        normalized = key.lower().replace("-", "_")
-        if normalized in _SECRET_KEYS:
+    for key, value in normalized_config.items():
+        if key in _SECRET_KEYS:
             raise ValueError("store secrets as environment references")
-        if normalized.endswith("_ref") and (
+        if key.endswith("_ref") and (
             not isinstance(value, str) or not _SECRET_REF_PATTERN.fullmatch(value)
         ):
             raise ValueError("secret references must use an uppercase *_REF name")
-    validate_governed_payload(config, allow_technical_parameters=True, path="technical_config")
-    return config
+    validate_governed_payload(
+        normalized_config,
+        allow_technical_parameters=True,
+        path="technical_config",
+    )
+    return normalized_config
 
 
 class ProfileCreate(BaseModel):
@@ -62,7 +73,7 @@ class ProfileCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_config(self) -> "ProfileCreate":
-        _validate_technical_config(self.technical_config)
+        self.technical_config = _validate_technical_config(self.technical_config)
         validate_allowed_keys(
             self.medical_options,
             allowed_keys=MEDICAL_PROFILE_OPTION_KEYS,
@@ -87,7 +98,7 @@ class ProfilePatch(BaseModel):
     @model_validator(mode="after")
     def validate_config(self) -> "ProfilePatch":
         if self.technical_config is not None:
-            _validate_technical_config(self.technical_config)
+            self.technical_config = _validate_technical_config(self.technical_config)
         if self.medical_options is not None:
             validate_allowed_keys(
                 self.medical_options,

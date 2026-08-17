@@ -99,13 +99,26 @@ _RAW_SECRET_VALUE_PATTERN = re.compile(
     r"(?:postgres(?:ql)?|mysql|mariadb|sqlite)\+?[A-Za-z0-9_-]*://\S+|"
     r"https?://[^/@\s]+:[^/@\s]+@\S+)$"
 )
+_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 _CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _KEY_SEPARATOR = re.compile(r"[^A-Za-z0-9]+")
+_COMPACT_KEY_ALIASES = {
+    key.replace("_", ""): key
+    for key in TECHNICAL_PARAMETER_KEYS | _SECRET_KEYS
+}
+_COMPACT_KEY_ALIASES.update(
+    {
+        f"{key.replace('_', '')}ref": f"{key}_ref"
+        for key in _SECRET_KEYS
+    }
+)
 
 
 def normalize_governance_key(key: Any) -> str:
-    separated = _CAMEL_CASE_BOUNDARY.sub("_", str(key))
-    return _KEY_SEPARATOR.sub("_", separated).strip("_").lower()
+    separated = _ACRONYM_BOUNDARY.sub("_", str(key))
+    separated = _CAMEL_CASE_BOUNDARY.sub("_", separated)
+    normalized = _KEY_SEPARATOR.sub("_", separated).strip("_").lower()
+    return _COMPACT_KEY_ALIASES.get(normalized.replace("_", ""), normalized)
 
 
 def _is_secret_reference_key(key: str) -> bool:

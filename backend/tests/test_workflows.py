@@ -81,8 +81,8 @@ def test_admin_can_list_and_edit_another_users_workflow(client, admin_token, wor
     assert response.json()["description"] == "admin update"
 
 
-def test_publish_hash_is_stable_for_same_definition(client, medical_token, minimal_valid_graph):
-    headers = {"Authorization": f"Bearer {medical_token}"}
+def test_publish_hash_is_stable_for_same_definition(client, admin_token, minimal_valid_graph):
+    headers = {"Authorization": f"Bearer {admin_token}"}
     created = client.post("/api/v1/workflows", headers=headers, json={"name": "Stable"})
     workflow_id = created.json()["id"]
     client.patch(
@@ -115,6 +115,31 @@ def test_medical_user_cannot_store_hidden_parameters_in_workflow(
         "topK": 5,
         "apiKeyRef": "MODEL_API_KEY_REF",
         "apiKey": "raw-secret-token",
+    }
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 422
+
+
+def test_medical_user_cannot_nest_acronym_secret_in_allowed_node_config(
+    client,
+    medical_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Nested secret workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    graph["nodes"][0]["config"] = {
+        "inputSchema": {"APIKey": "raw-secret-token"},
     }
 
     response = client.patch(

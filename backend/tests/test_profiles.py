@@ -1,3 +1,5 @@
+import pytest
+
 from app.profiles.models import KnowledgeProfile
 
 
@@ -90,6 +92,33 @@ def test_technical_profile_values_are_validated_and_secret_values_rejected(clien
     ).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "technical_config",
+    [
+        {"Provider": "unsupported"},
+        {"topK": 0},
+        {"scoreThreshold": 2},
+        {"reTries": -1},
+        {"timeOut": 0},
+    ],
+)
+def test_technical_profile_validation_canonicalizes_key_aliases(
+    client,
+    admin_token,
+    technical_config,
+):
+    payload = _knowledge_payload("Invalid aliased config")
+    payload["technical_config"] = technical_config
+
+    response = client.post(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
 def test_profile_rejects_nested_secret_values(client, admin_token):
     payload = _knowledge_payload("Nested Secret KB")
     payload["technical_config"]["headers"] = {"apiKey": "raw-secret-token"}
@@ -133,7 +162,11 @@ def test_medical_profile_read_redacts_legacy_hidden_options(
             KnowledgeProfile(
                 name="Legacy unsafe profile",
                 technical_config_json={},
-                medical_options_json={"scope": "guidelines", "top_k": 99},
+                medical_options_json={
+                    "scope": "guidelines",
+                    "top_k": 99,
+                    "APIKey": "raw-secret-token",
+                },
                 exposed_to_medical=True,
                 is_active=True,
             )
