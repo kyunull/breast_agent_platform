@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: .
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://platform:platform@postgres:5432/platform
+      SESSION_TTL_HOURS: 12
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - platform-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  platform-postgres-data:
