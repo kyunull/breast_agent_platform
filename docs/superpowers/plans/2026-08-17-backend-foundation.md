@@ -86,15 +86,15 @@ backend/
     versions/
   scripts/
     create_admin.py
-tests/
-  conftest.py
-  test_health.py
-  test_auth.py
-  test_profiles.py
-  test_graph_validation.py
-  test_extraction.py
-  test_workflows.py
-  test_reference_template.py
+  tests/
+    conftest.py
+    test_health.py
+    test_auth.py
+    test_profiles.py
+    test_graph_validation.py
+    test_extraction.py
+    test_workflows.py
+    test_reference_template.py
 ```
 
 `core` owns infrastructure and cross-cutting policies. `users`, `auth`, and `profiles` own governance. `graph`, `extraction`, and `workflows` contain domain logic and are testable without HTTP. `templates` contains a platform-native reference graph, never a ProcessOn importer.
@@ -103,8 +103,10 @@ tests/
 
 **Files:**
 - Create: `backend/pyproject.toml`
+- Create: `backend/app/__init__.py`
 - Create: `backend/app/main.py`
 - Create: `backend/app/api.py`
+- Create: `backend/app/core/__init__.py`
 - Create: `backend/app/core/config.py`
 - Create: `backend/app/core/errors.py`
 - Create: `backend/tests/conftest.py`
@@ -248,17 +250,22 @@ Expected: `1 passed`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/pyproject.toml backend/app backend/tests/test_health.py
+git add backend/pyproject.toml backend/app backend/tests/conftest.py backend/tests/test_health.py
 git commit -m "feat: scaffold decision agent backend"
 ```
 
 ## Task 2: Add Database Models and Migrations
 
 **Files:**
+- Create: `backend/alembic.ini`
 - Create: `backend/app/core/database.py`
+- Create: `backend/app/audit/__init__.py`
 - Create: `backend/app/users/models.py`
+- Create: `backend/app/users/__init__.py`
 - Create: `backend/app/profiles/models.py`
+- Create: `backend/app/profiles/__init__.py`
 - Create: `backend/app/workflows/models.py`
+- Create: `backend/app/workflows/__init__.py`
 - Create: `backend/app/audit/models.py`
 - Create: `backend/app/audit/service.py`
 - Create: `backend/app/core/model_registry.py`
@@ -266,10 +273,12 @@ git commit -m "feat: scaffold decision agent backend"
 - Create: `backend/alembic/script.py.mako`
 - Create: `backend/alembic/versions/0001_initial.py`
 - Create: `backend/tests/test_database.py`
+- Modify: `backend/tests/conftest.py`
+- Modify: `backend/app/main.py`
 
 **Interfaces:**
 - `get_engine(settings: Settings) -> Engine` creates SQLite with `check_same_thread=False` or PostgreSQL from `DATABASE_URL`.
-- `SessionLocal` is the request-scoped SQLAlchemy session factory.
+- `session_factory(engine)` creates the request-scoped SQLAlchemy session factory.
 - `Base.metadata` contains `app_user`, `auth_session`, `model_profile`, `knowledge_profile`, `workflow`, `workflow_version`, and `audit_log`.
 - Workflow versions store canonical `definition_json`, `extraction_json`, `status`, `version_number`, and `definition_sha256`.
 
@@ -353,13 +362,14 @@ Expected: the test passes and Alembic creates all seven tables.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/core/database.py backend/app/core/model_registry.py backend/app/users backend/app/profiles backend/app/workflows backend/app/audit backend/alembic backend/tests/test_database.py
+git add backend/alembic.ini backend/app/core/database.py backend/app/core/model_registry.py backend/app/main.py backend/app/users backend/app/profiles backend/app/workflows backend/app/audit backend/alembic backend/tests/conftest.py backend/tests/test_database.py
 git commit -m "feat: add backend governance database schema"
 ```
 
 ## Task 3: Implement Local Authentication and Role Enforcement
 
 **Files:**
+- Create: `backend/app/auth/__init__.py`
 - Create: `backend/app/core/security.py`
 - Create: `backend/app/auth/schemas.py`
 - Create: `backend/app/auth/service.py`
@@ -467,6 +477,7 @@ git commit -m "feat: add local role-based authentication"
 ## Task 4: Add Model and Knowledge Profile Governance
 
 **Files:**
+- Create: `backend/app/graph/__init__.py`
 - Create: `backend/app/profiles/schemas.py`
 - Create: `backend/app/profiles/service.py`
 - Create: `backend/app/profiles/router.py`
@@ -565,6 +576,7 @@ git commit -m "feat: govern model and knowledge profiles by role"
 ## Task 5: Define Workflow Graph Contracts and Validation
 
 **Files:**
+- Create: `backend/app/extraction/__init__.py`
 - Create: `backend/app/graph/schemas.py`
 - Create: `backend/app/graph/validation.py`
 - Create: `backend/tests/test_graph_validation.py`
@@ -650,6 +662,7 @@ git commit -m "feat: validate decision workflow graphs"
 ## Task 6: Implement Full-JSON Extraction and Preview
 
 **Files:**
+- Create: `backend/app/templates/__init__.py`
 - Create: `backend/app/extraction/schemas.py`
 - Create: `backend/app/extraction/service.py`
 - Create: `backend/app/extraction/router.py`
@@ -841,7 +854,7 @@ git commit -m "feat: add native HER2 workflow template"
 - Create: `backend/compose.yml`
 - Create: `backend/scripts/run_backend.ps1`
 - Create: `backend/scripts/run_backend.sh`
-- Modify: `README.md`
+- Create: `README.md`
 - Create: `backend/tests/test_startup_config.py`
 
 **Interfaces:**
