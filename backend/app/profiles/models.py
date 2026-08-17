@@ -31,9 +31,6 @@ class ModelProfile(Base):
     )
 
 
-initialize_models()
-
-
 class KnowledgeProfile(Base):
     __tablename__ = "knowledge_profile"
 
@@ -51,3 +48,6 @@ class KnowledgeProfile(Base):
         default=utc_now,
         onupdate=utc_now,
     )
+
+
+initialize_models()

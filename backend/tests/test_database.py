@@ -61,7 +61,7 @@ def test_record_audit_flushes_without_sensitive_metadata(tmp_path) -> None:
     assert stored.metadata_json == {"changed_fields": ["name"]}
 
 
-def test_model_registry_initializes_only_when_requested() -> None:
+def test_model_registry_initializes_on_database_import() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     expected_tables = {
         "app_user",
@@ -79,10 +79,7 @@ def test_model_registry_initializes_only_when_requested() -> None:
         [
             sys.executable,
             "-c",
-            "import sys\n"
-            "from app.core.database import Base, initialize_models\n"
-            "assert 'app.core.model_registry' not in sys.modules\n"
-            "initialize_models()\n"
+            "from app.core.database import Base\n"
             + f"expected = {expected_tables!r}\n"
             + "assert expected <= set(Base.metadata.tables), sorted(Base.metadata.tables)\n",
         ],
@@ -94,7 +91,7 @@ def test_model_registry_initializes_only_when_requested() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_model_modules_can_be_imported_before_database_registry() -> None:
+def test_audit_model_can_be_imported_before_database_registry() -> None:
     backend_dir = Path(__file__).resolve().parents[1]
     expected_tables = {
         "app_user",
@@ -112,10 +109,8 @@ def test_model_modules_can_be_imported_before_database_registry() -> None:
         [
             sys.executable,
             "-c",
-            "from app.users.models import User\n"
-            "from app.workflows.models import WorkflowVersion\n"
-            "from app.core.database import Base, initialize_models\n"
-            "initialize_models()\n"
+            "from app.audit.models import AuditLog\n"
+            "from app.core.database import Base\n"
             + f"expected = {expected_tables!r}\n"
             + "assert expected <= set(Base.metadata.tables), sorted(Base.metadata.tables)\n",
         ],

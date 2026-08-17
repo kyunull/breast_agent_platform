@@ -39,6 +39,7 @@ def _model_module_is_initializing() -> bool:
             return True
     return False
 
+
 def get_engine(settings: Settings) -> Engine:
     kwargs = (
         {"connect_args": {"check_same_thread": False}}
