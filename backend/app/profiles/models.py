@@ -5,7 +5,7 @@ from uuid import uuid4
 from sqlalchemy import Boolean, DateTime, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, initialize_models
 
 
 def utc_now() -> datetime:
@@ -29,6 +29,9 @@ class ModelProfile(Base):
         default=utc_now,
         onupdate=utc_now,
     )
+
+
+initialize_models()
 
 
 class KnowledgeProfile(Base):

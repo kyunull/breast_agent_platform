@@ -29,6 +29,7 @@ def upgrade() -> None:
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("role IN ('admin_developer', 'medical_user')", name='ck_app_user_role'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_app_user_username', 'app_user', ['username'], unique=True)
@@ -99,15 +100,27 @@ def upgrade() -> None:
     sa.Column('definition_json', sa.JSON(), nullable=False),
     sa.Column('extraction_json', sa.JSON(), nullable=False),
     sa.Column('status', sa.String(length=32), nullable=False),
-    sa.Column('definition_sha256', sa.String(length=64), nullable=True),
+    sa.Column('definition_sha256', sa.String(length=64), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['workflow_id'], ['workflow.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.CheckConstraint("status IN ('draft', 'published', 'archived')", name='ck_workflow_version_status'),
-    sa.UniqueConstraint('workflow_id', 'version_number', name='uq_workflow_version_number')
+    sa.CheckConstraint(
+        "status IN ('draft', 'published', 'archived')",
+        name='ck_workflow_version_status',
+    ),
+    sa.UniqueConstraint(
+        'workflow_id',
+        'version_number',
+        name='uq_workflow_version_number',
+    ),
     )
-    op.create_index('ix_workflow_version_workflow_status', 'workflow_version', ['workflow_id', 'status'], unique=False)
+    op.create_index(
+        'ix_workflow_version_workflow_status',
+        'workflow_version',
+        ['workflow_id', 'status'],
+        unique=False,
+    )
     # ### end Alembic commands ###
 
 

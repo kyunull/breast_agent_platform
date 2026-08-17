@@ -1,48 +1,84 @@
+import re
 from collections.abc import Mapping
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
 
 
-_SENSITIVE_KEY_PARTS = (
-    "password",
-    "passwd",
-    "token",
-    "api_key",
-    "apikey",
-    "secret",
-    "credential",
-    "database_url",
-    "db_url",
-    "patient_json",
-    "patient_data",
-    "patient",
-    "payload",
-    "clinical_record",
-    "full_patient",
-    "raw_json",
+_UUID_METADATA_KEYS = {
+    "actor_id",
+    "entity_id",
+    "profile_id",
+    "model_profile_id",
+    "knowledge_profile_id",
+    "workflow_id",
+    "version_id",
+    "template_id",
+}
+_STATUS_VALUES = {"draft", "published", "archived", "active", "inactive"}
+_FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)(password|passwd|token|api[\s_-]?key|secret|credential|"
+    r"database[\s_-]?(url|user|password|credential)|bearer|"
+    r"(?:postgres(?:ql)?|sqlite)://)"
 )
+_DROP = object()
 
 
-def _is_sensitive_key(key: object) -> bool:
-    normalized = str(key).lower().replace("-", "_")
-    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+def _is_sensitive_string(value: str) -> bool:
+    return bool(_SENSITIVE_VALUE_PATTERN.search(value))
 
 
-def _sanitize_metadata(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): _sanitize_metadata(item)
-            for key, item in value.items()
-            if not _is_sensitive_key(key)
-        }
-    if isinstance(value, list):
-        return [_sanitize_metadata(item) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize_metadata(item) for item in value]
-    return value
+def _sanitize_uuid(value: Any) -> str | object:
+    if not isinstance(value, str) or _is_sensitive_string(value):
+        return _DROP
+    try:
+        return str(UUID(value))
+    except ValueError:
+        return _DROP
+
+
+def _sanitize_changed_fields(value: Any) -> list[str] | object:
+    if not isinstance(value, (list, tuple)):
+        return _DROP
+
+    fields = [
+        field
+        for field in value
+        if isinstance(field, str)
+        and _FIELD_NAME_PATTERN.fullmatch(field)
+        and not _is_sensitive_string(field)
+    ]
+    return fields if fields else _DROP
+
+
+def _sanitize_metadata_value(key: str, value: Any) -> Any:
+    if key in _UUID_METADATA_KEYS:
+        return _sanitize_uuid(value)
+    if key == "changed_fields":
+        return _sanitize_changed_fields(value)
+    if key == "version_number":
+        return (
+            value
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            else _DROP
+        )
+    if key == "status":
+        return value if isinstance(value, str) and value in _STATUS_VALUES else _DROP
+    return _DROP
+
+
+def _sanitize_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in metadata.items():
+        normalized_key = str(key).lower().replace("-", "_")
+        safe_value = _sanitize_metadata_value(normalized_key, value)
+        if safe_value is not _DROP:
+            sanitized[normalized_key] = safe_value
+    return sanitized
 
 
 def record_audit(

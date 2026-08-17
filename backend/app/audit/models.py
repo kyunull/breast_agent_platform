@@ -5,7 +5,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, ForeignKey, Index, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, initialize_models
 
 
 def utc_now() -> datetime:
@@ -27,3 +27,6 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+initialize_models()

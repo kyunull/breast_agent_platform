@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,7 +13,13 @@ def utc_now() -> datetime:
 
 class User(Base):
     __tablename__ = "app_user"
-    __table_args__ = (Index("ix_app_user_username", "username", unique=True),)
+    __table_args__ = (
+        Index("ix_app_user_username", "username", unique=True),
+        CheckConstraint(
+            "role IN ('admin_developer', 'medical_user')",
+            name="ck_app_user_role",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     username: Mapped[str] = mapped_column(String(255), nullable=False)
