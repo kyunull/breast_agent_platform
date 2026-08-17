@@ -179,6 +179,36 @@ def test_medical_user_cannot_nest_prefixed_governance_keys_in_allowed_node_confi
     assert response.status_code == 422
 
 
+def test_medical_user_can_use_clinical_names_ending_in_governed_terms_in_schema(
+    client,
+    medical_token,
+    minimal_valid_graph,
+):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Clinical schema names workflow"},
+    ).json()["id"]
+    graph = deepcopy(minimal_valid_graph)
+    input_schema = {
+        "careProvider": {"type": "string"},
+        "riskModel": {"type": "string"},
+        "randomSeed": {"type": "string"},
+        "clinicalEndpoint": {"type": "string"},
+    }
+    graph["nodes"][0]["config"] = {"inputSchema": input_schema}
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["graph"]["nodes"][0]["config"]["inputSchema"] == input_schema
+
+
 def test_admin_can_store_technical_parameters_in_workflow(
     client,
     admin_token,

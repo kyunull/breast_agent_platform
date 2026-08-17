@@ -94,6 +94,7 @@ _SECRET_KEYS = {
     "token",
 }
 _SECRET_REF_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_REF$")
+_SCHEMA_CONTAINER_KEYS = {"input_schema", "output_schema"}
 _RAW_SECRET_VALUE_PATTERN = re.compile(
     r"(?i)^(?:bearer\s+\S+|sk-[A-Za-z0-9_-]{8,}|"
     r"(?:postgres(?:ql)?|mysql|mariadb|sqlite)\+?[A-Za-z0-9_-]*://\S+|"
@@ -145,6 +146,7 @@ def validate_governed_payload(
     *,
     allow_technical_parameters: bool,
     path: str = "payload",
+    _inside_data_schema: bool = False,
 ) -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -158,12 +160,19 @@ def validate_governed_payload(
                 if not isinstance(child, str) or not _SECRET_REF_PATTERN.fullmatch(child):
                     raise ValueError(f"{child_path} must be an uppercase *_REF name")
                 continue
-            if not allow_technical_parameters and normalized in TECHNICAL_PARAMETER_KEYS:
+            if (
+                not allow_technical_parameters
+                and not _inside_data_schema
+                and normalized in TECHNICAL_PARAMETER_KEYS
+            ):
                 raise ValueError(f"{child_path} is restricted to admin/developer users")
             validate_governed_payload(
                 child,
                 allow_technical_parameters=allow_technical_parameters,
                 path=child_path,
+                _inside_data_schema=(
+                    _inside_data_schema or normalized in _SCHEMA_CONTAINER_KEYS
+                ),
             )
         return
     if isinstance(value, list):
@@ -172,27 +181,39 @@ def validate_governed_payload(
                 child,
                 allow_technical_parameters=allow_technical_parameters,
                 path=f"{path}[{index}]",
+                _inside_data_schema=_inside_data_schema,
             )
         return
     if isinstance(value, str) and _looks_like_raw_secret(value):
         raise ValueError(f"{path} contains raw secret material")
 
 
-def _redact(value: Any) -> Any:
+def _redact(value: Any, *, inside_data_schema: bool = False) -> Any:
     if isinstance(value, Mapping):
         sanitized: dict[str, Any] = {}
         for key, child in value.items():
             normalized = normalize_governance_key(key)
             if (
-                normalized in TECHNICAL_PARAMETER_KEYS
-                or normalized in _SECRET_KEYS
+                normalized in _SECRET_KEYS
                 or _is_secret_reference_key(normalized)
+                or (
+                    not inside_data_schema
+                    and normalized in TECHNICAL_PARAMETER_KEYS
+                )
             ):
                 continue
-            sanitized[str(key)] = _redact(child)
+            sanitized[str(key)] = _redact(
+                child,
+                inside_data_schema=(
+                    inside_data_schema or normalized in _SCHEMA_CONTAINER_KEYS
+                ),
+            )
         return sanitized
     if isinstance(value, list):
-        return [_redact(child) for child in value]
+        return [
+            _redact(child, inside_data_schema=inside_data_schema)
+            for child in value
+        ]
     if isinstance(value, str) and _looks_like_raw_secret(value):
         return None
     return value
