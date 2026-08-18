@@ -1,0 +1,80 @@
+:root {
+  color: #1c2830;
+  background: #eceae4;
+  font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink-950: #102631;
+  --ink-800: #183947;
+  --ink-650: #4e6670;
+  --paper-100: #f8f7f3;
+  --paper-200: #eceae4;
+  --paper-300: #dfded7;
+  --teal-700: #08766f;
+  --teal-600: #099486;
+  --amber-600: #a95f05;
+  --red-700: #a42e36;
+  --line: #c9cfca;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --shadow-panel: 0 10px 24px rgb(16 38 49 / 10%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+body {
+  background-color: var(--paper-200);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-root {
+  min-height: 100vh;
+}
+
+.app-bootstrap {
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+  padding: 32px;
+  background-image: linear-gradient(90deg, rgb(16 38 49 / 4%) 1px, transparent 1px), linear-gradient(rgb(16 38 49 / 4%) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.app-bootstrap h1 {
+  max-width: 580px;
+  margin: 0;
+  color: var(--ink-950);
+  font-family: "STKaiti", "KaiTi", serif;
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app-bootstrap p {
+  color: var(--ink-650);
+}
+
+.app-bootstrap__eyebrow {
+  margin: 0 0 10px;
+  color: var(--teal-700) !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
