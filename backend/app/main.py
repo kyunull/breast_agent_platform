@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.core.errors import validation_error_handler
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    load_dotenv(override=False)
     app = FastAPI(title="Breast Cancer Decision Agent Backend", version="0.1.0")
     app.state.settings = settings or Settings()
     allowed_origins = [

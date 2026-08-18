@@ -6,18 +6,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class RunCreate(BaseModel):
     workflow_id: str
-    version_number: int | None = Field(default=None, ge=1)
+    version_number: int | None = Field(default=None, ge=0)
     input: dict[str, Any] = Field(default_factory=dict)
     mode: Literal["sync", "async"] = "sync"
     model_profile_id: str | None = None
 
 
 class RunRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
     workflow_id: str
     workflow_version_id: str
+    model_profile_id: str | None = None
     mode: str
     status: str
     input_sha256: str
@@ -30,7 +31,7 @@ class RunRead(BaseModel):
 
 
 class TraceRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
     run_id: str
@@ -68,7 +69,7 @@ class EvidenceRead(BaseModel):
 
 
 class PromptOptimizationRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
     workflow_id: str
@@ -84,3 +85,22 @@ class PromptOptimizationRead(BaseModel):
     created_by: str | None
     created_at: datetime
     applied_at: datetime | None
+
+
+class PromptOptimizationCreate(BaseModel):
+    run_id: str
+    node_id: str = Field(min_length=1, max_length=255)
+    instruction: str = Field(min_length=1, max_length=4_000)
+    model_profile_id: str | None = None
+
+
+class KnowledgePreviewRequest(BaseModel):
+    knowledge_profile_id: str
+    query: str = Field(min_length=1, max_length=10_000)
+    guideline_ids: list[str] = Field(default_factory=list)
+    version_ids: list[str] = Field(default_factory=list)
+    language: str = Field(default="zh", min_length=1, max_length=32)
+
+
+class KnowledgePreviewRead(BaseModel):
+    evidence: list[EvidenceRead]

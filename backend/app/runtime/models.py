@@ -37,6 +37,7 @@ class WorkflowRun(Base):
         ),
         Index("ix_workflow_run_workflow_created", "workflow_id", "created_at"),
         Index("ix_workflow_run_created_by", "created_by"),
+        Index("ix_workflow_run_model_profile", "model_profile_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -45,6 +46,9 @@ class WorkflowRun(Base):
     )
     workflow_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workflow_version.id", ondelete="CASCADE"), nullable=False
+    )
+    model_profile_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("model_profile.id", ondelete="SET NULL"), nullable=True
     )
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="sync")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
@@ -61,6 +65,7 @@ class WorkflowRun(Base):
 
     workflow: Mapped["Workflow"] = relationship(foreign_keys=[workflow_id])
     workflow_version: Mapped["WorkflowVersion"] = relationship(foreign_keys=[workflow_version_id])
+    model_profile: Mapped["ModelProfile | None"] = relationship(foreign_keys=[model_profile_id])
     creator: Mapped["User | None"] = relationship(foreign_keys=[created_by])
     traces: Mapped[list["NodeTrace"]] = relationship(
         back_populates="run", cascade="all, delete-orphan", order_by="NodeTrace.created_at"

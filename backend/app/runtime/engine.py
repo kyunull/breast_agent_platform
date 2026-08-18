@@ -30,9 +30,11 @@ class WorkflowEngine:
         *,
         providers: Mapping[str, Any] | None = None,
         trace_sink: Callable[[dict[str, Any]], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         self.providers = providers or {}
         self.trace_sink = trace_sink
+        self.cancel_check = cancel_check
 
     @staticmethod
     def _selected(edge: EdgeSpec, selected_ports: list[str]) -> bool:
@@ -75,6 +77,7 @@ class WorkflowEngine:
             (node.id, False, None) for node in graph.nodes if node.type == "input"
         )
         processed: set[str] = set()
+        skipped: set[str] = set()
         enqueued: set[str] = {node.id for node in graph.nodes if node.type == "input"}
         active_edges: set[str] = set()
         iterations: dict[str, int] = defaultdict(int)
@@ -84,7 +87,52 @@ class WorkflowEngine:
             if self.trace_sink is not None:
                 self.trace_sink(data)
 
+        def node_input(node_id: str) -> dict[str, Any]:
+            return {
+                "incoming": {
+                    edge.source: context.node_outputs[edge.source]
+                    for edge in incoming.get(node_id, [])
+                    if edge.source in context.node_outputs
+                },
+                "extracted": context.extracted if nodes[node_id].type == "input" else {},
+            }
+
+        def advance_ready_nodes() -> None:
+            changed = True
+            while changed:
+                changed = False
+                settled = processed | skipped
+                for candidate in graph.nodes:
+                    if (
+                        candidate.type == "input"
+                        or candidate.id in settled
+                        or candidate.id in enqueued
+                    ):
+                        continue
+                    target_edges = [
+                        edge
+                        for edge in incoming.get(candidate.id, [])
+                        if edge.kind != "reassessment"
+                    ]
+                    if not target_edges or not all(edge.source in settled for edge in target_edges):
+                        continue
+                    selected_edges = [edge for edge in target_edges if edge.id in active_edges]
+                    if selected_edges:
+                        queue.append((candidate.id, False, selected_edges[-1].source))
+                        enqueued.add(candidate.id)
+                    else:
+                        skipped.add(candidate.id)
+                    changed = True
+
         while queue:
+            if self.cancel_check is not None and self.cancel_check():
+                return ExecutionResult(
+                    status="cancelled",
+                    output=final_output,
+                    node_outputs=context.node_outputs,
+                    evidence=context.evidence,
+                    iterations=dict(iterations),
+                )
             node_id, repeat, parent_trace_id = queue.popleft()
             if node_id not in nodes or (node_id in processed and not repeat):
                 continue
@@ -92,13 +140,18 @@ class WorkflowEngine:
             started = time.perf_counter()
             try:
                 result = execute_node(node, context, self.providers)
-            except Exception as exc:  # noqa: BLE001 - persist every isolated node failure
-                error = {"code": "node_execution_failed", "message": str(exc), "node_id": node_id}
+            except Exception:  # noqa: BLE001 - persist every isolated node failure
+                error = {
+                    "code": "node_execution_failed",
+                    "message": "node execution failed",
+                    "node_id": node_id,
+                }
                 emit(
                     {
                         "node_id": node_id,
                         "parent_trace_id": parent_trace_id,
                         "status": "failed",
+                        "input": node_input(node_id),
                         "error": error,
                         "duration_ms": int((time.perf_counter() - started) * 1000),
                     }
@@ -119,6 +172,7 @@ class WorkflowEngine:
                     "node_id": node_id,
                     "parent_trace_id": parent_trace_id,
                     "status": result.status,
+                    "input": node_input(node_id),
                     "output": result.output,
                     "evidence_refs": [item.evidence_id for item in result.evidence],
                     "duration_ms": int((time.perf_counter() - started) * 1000),
@@ -143,19 +197,7 @@ class WorkflowEngine:
                     continue
                 if self._selected(edge, selected_ports):
                     active_edges.add(edge.id)
-                if edge.target in processed or edge.target in enqueued:
-                    continue
-                target_edges = [
-                    candidate
-                    for candidate in incoming.get(edge.target, [])
-                    if candidate.kind != "reassessment"
-                ]
-                source_ids = {candidate.source for candidate in target_edges}
-                if source_ids.issubset(processed) and any(
-                    candidate.id in active_edges for candidate in target_edges
-                ):
-                    queue.append((edge.target, False, node_id))
-                    enqueued.add(edge.target)
+            advance_ready_nodes()
 
         output_nodes = [node.id for node in graph.nodes if node.type == "output"]
         if output_nodes and not final_output:

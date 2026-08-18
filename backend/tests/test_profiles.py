@@ -59,6 +59,23 @@ def test_admin_profile_read_contains_technical_configuration(client, admin_token
     assert response.json()[0]["technical_config"]["top_k"] == 5
 
 
+def test_admin_can_register_generic_http_knowledge_provider(client, admin_token):
+    payload = _knowledge_payload("Generic KB")
+    payload["technical_config"].update(
+        {
+            "provider": "generic_http",
+            "query_field": "q",
+            "result_path": "data.matches",
+        }
+    )
+    response = client.post(
+        "/api/v1/knowledge-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=payload,
+    )
+    assert response.status_code == 201, response.text
+
+
 def test_medical_user_cannot_patch_profile(client, admin_token, medical_token):
     created = client.post(
         "/api/v1/knowledge-profiles",

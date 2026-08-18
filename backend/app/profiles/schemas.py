@@ -10,7 +10,14 @@ from app.core.governance import (
     validate_governed_payload,
 )
 
-_SUPPORTED_PROVIDERS = {"knowledgebase", "openai", "openai_compatible", "local"}
+_SUPPORTED_PROVIDERS = {
+    "knowledgebase",
+    "generic_http",
+    "http",
+    "openai",
+    "openai_compatible",
+    "local",
+}
 _SECRET_KEYS = {"api_key", "password", "token", "secret", "access_token"}
 _SECRET_REF_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*_REF$")
 

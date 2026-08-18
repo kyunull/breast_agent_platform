@@ -3,7 +3,7 @@ import json
 from sqlalchemy import select
 
 from app.profiles.models import ModelProfile
-from app.runtime.models import NodeTrace, PromptOptimization, RunEvidence, WorkflowRun
+from app.runtime.models import NodeTrace, PromptOptimization, RunEvidence
 from app.runtime.service import append_trace, create_run, store_evidence
 from app.users.models import User
 from app.workflows.models import Workflow, WorkflowVersion
@@ -38,7 +38,15 @@ def test_create_run_hashes_input_and_stores_bounded_summary(client):
     db = client.app.state.db_factory()
     try:
         user, workflow, version = _records(db)
-        raw_input = {"患者": {"年龄": 52, "病历": "x" * 5000}}
+        raw_input = {
+            "患者": {
+                "年龄": 52,
+                "姓名": "张三",
+                "身份证号": "110101199001011234",
+                "现病史": "患者发现乳房肿块三个月",
+                "病历": "x" * 5000,
+            }
+        }
 
         run = create_run(
             db,
@@ -54,6 +62,9 @@ def test_create_run_hashes_input_and_stores_bounded_summary(client):
         summary = run.input_summary_json
         assert len(json.dumps(summary, ensure_ascii=False)) < 1200
         assert "病历" not in summary.get("患者", {})
+        assert "张三" not in json.dumps(summary, ensure_ascii=False)
+        assert "110101199001011234" not in json.dumps(summary, ensure_ascii=False)
+        assert "患者发现乳房肿块三个月" not in json.dumps(summary, ensure_ascii=False)
     finally:
         db.close()
 

@@ -230,3 +230,74 @@ def test_engine_bounded_reassessment_does_not_run_forever():
     result = WorkflowEngine().execute(graph, ExtractionConfig(groups=[]), {}, run_id="run-3")
     assert result.status == "succeeded"
     assert result.iterations["e2"] == 2
+
+
+def test_engine_merges_after_skipping_an_unselected_branch():
+    graph = WorkflowGraph.model_validate(
+        {
+            "nodes": [
+                {"id": "input", "type": "input", "name": "输入", "output_ports": ["out"]},
+                {
+                    "id": "condition",
+                    "type": "condition",
+                    "name": "条件",
+                    "input_ports": ["in"],
+                    "output_ports": ["yes", "no"],
+                    "config": {
+                        "operator": "eq",
+                        "left": "facts.stage",
+                        "right": "IV",
+                        "true_port": "yes",
+                        "false_port": "no",
+                    },
+                },
+                {
+                    "id": "yes_rule",
+                    "type": "python_rule",
+                    "name": "命中分支",
+                    "input_ports": ["in"],
+                    "output_ports": ["out"],
+                    "config": {"code": "result = {'branch': 'yes'}"},
+                },
+                {
+                    "id": "no_rule",
+                    "type": "python_rule",
+                    "name": "未命中分支",
+                    "input_ports": ["in"],
+                    "output_ports": ["out"],
+                    "config": {"code": "result = {'branch': 'no'}"},
+                },
+                {
+                    "id": "output",
+                    "type": "output",
+                    "name": "汇合输出",
+                    "input_ports": ["left", "right"],
+                    "config": {"transfer_fields": ["yes_rule.branch"]},
+                },
+            ],
+            "edges": [
+                {"id": "e1", "source": "input", "target": "condition", "source_port": "out", "target_port": "in"},
+                {"id": "e2", "source": "condition", "target": "yes_rule", "source_port": "yes", "target_port": "in", "kind": "branch", "branch_label": "yes"},
+                {"id": "e3", "source": "condition", "target": "no_rule", "source_port": "no", "target_port": "in", "kind": "branch", "branch_label": "no"},
+                {"id": "e4", "source": "yes_rule", "target": "output", "source_port": "out", "target_port": "left"},
+                {"id": "e5", "source": "no_rule", "target": "output", "source_port": "out", "target_port": "right"},
+            ],
+        }
+    )
+    result = WorkflowEngine().execute(
+        graph,
+        ExtractionConfig.model_validate(
+            {
+                "groups": [
+                    {
+                        "id": "facts",
+                        "label": "事实",
+                        "fields": [{"alias": "stage", "path": "$.stage", "type": "string"}],
+                    }
+                ]
+            }
+        ),
+        {"stage": "IV"},
+    )
+    assert result.output == {"branch": "yes"}
+    assert "no_rule" not in result.node_outputs

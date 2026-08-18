@@ -9,7 +9,31 @@ from app.runtime.models import NodeTrace, PromptOptimization, RunEvidence, Workf
 
 _MAX_SUMMARY_CHARS = 1000
 _MAX_DEPTH = 5
-_SENSITIVE_KEY_PARTS = ("病历", "原文", "患者数据", "raw", "record", "clinical_text", "medical_text")
+_SENSITIVE_KEY_PARTS = (
+    "住院号",
+    "身份证",
+    "手机号",
+    "电话",
+    "姓名",
+    "地址",
+    "病历",
+    "病史",
+    "主诉",
+    "现病",
+    "诊断",
+    "原文",
+    "患者数据",
+    "raw",
+    "record",
+    "clinical_text",
+    "medical_text",
+    "patient",
+    "name",
+    "idcard",
+    "id_card",
+    "phone",
+    "address",
+)
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -17,7 +41,12 @@ def _is_sensitive_key(key: str) -> bool:
     return any(part in lowered or part in key for part in _SENSITIVE_KEY_PARTS)
 
 
-def summarize_input(value: Any, *, max_chars: int = _MAX_SUMMARY_CHARS) -> dict[str, Any]:
+def summarize_input(
+    value: Any,
+    *,
+    max_chars: int = _MAX_SUMMARY_CHARS,
+    include_text: bool = False,
+) -> dict[str, Any]:
     """Return a bounded, structural summary without persisting patient text."""
 
     def visit(item: Any, depth: int = 0) -> Any:
@@ -36,10 +65,14 @@ def summarize_input(value: Any, *, max_chars: int = _MAX_SUMMARY_CHARS) -> dict[
         if isinstance(item, tuple):
             return [visit(entry, depth + 1) for entry in item[:20]]
         if isinstance(item, str):
-            return item if len(item) <= 120 else f"[text:{len(item)} chars]"
-        if item is None or isinstance(item, (bool, int, float)):
-            return item
-        return str(item)[:120]
+            return item if include_text and len(item) <= 120 else f"[text:{len(item)} chars]"
+        if item is None:
+            return None
+        if isinstance(item, bool):
+            return "[boolean]"
+        if isinstance(item, (int, float)):
+            return item if include_text else "[number]"
+        return f"[{type(item).__name__}]"
 
     summary = visit(value)
     if not isinstance(summary, dict):
@@ -73,6 +106,7 @@ def create_run(
         status="queued",
         input_sha256=input_sha256(raw_input),
         input_summary_json=summarize_input(raw_input),
+        model_profile_id=payload.get("model_profile_id"),
         created_by=actor_id,
     )
     db.add(run)

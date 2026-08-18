@@ -82,6 +82,24 @@ def _knowledge_search(
     return records
 
 
+def _model_for_node(providers: Mapping[str, Any], config: Mapping[str, Any]) -> tuple[Any, Any]:
+    profile_id = providers.get("model_override_profile_id") or config.get("model_profile_ref")
+    if profile_id is not None:
+        selected = providers.get("models_by_profile", {}).get(str(profile_id))
+        if selected is not None:
+            return selected
+    return providers.get("model"), providers.get("model_profile")
+
+
+def _knowledge_for_node(providers: Mapping[str, Any], config: Mapping[str, Any]) -> Any:
+    profile_id = config.get("knowledge_profile_ref")
+    if profile_id is not None:
+        selected = providers.get("knowledge_by_profile", {}).get(str(profile_id))
+        if selected is not None:
+            return selected
+    return providers.get("knowledge")
+
+
 def _model_complete(
     provider: Any,
     profile: Any,
@@ -162,7 +180,7 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
     if node_type == "rag":
         query = _render(config.get("query", config.get("query_template", "")), context)
         records = _knowledge_search(
-            providers.get("knowledge"), str(query), config.get("filters", {})
+            _knowledge_for_node(providers, config), str(query), config.get("filters", {})
         )
         context_text = "\n\n".join(record.text for record in records)
         return NodeResult(
@@ -187,9 +205,10 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
         if system_prompt:
             messages.append({"role": "system", "content": str(system_prompt)})
         messages.append({"role": "user", "content": str(user_prompt)})
+        model_provider, model_profile = _model_for_node(providers, config)
         content = _model_complete(
-            providers.get("model"),
-            providers.get("model_profile"),
+            model_provider,
+            model_profile,
             messages,
             config.get("output_schema"),
         )
