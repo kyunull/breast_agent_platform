@@ -83,6 +83,7 @@ class NodeTrace(Base):
             name="ck_node_trace_status",
         ),
         Index("ix_node_trace_run_created", "run_id", "created_at"),
+        Index("ix_node_trace_run_sequence", "run_id", "sequence"),
         Index("ix_node_trace_run_node", "run_id", "node_id"),
     )
 
@@ -95,6 +96,7 @@ class NodeTrace(Base):
         String(36), ForeignKey("node_trace.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     input_summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     output_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

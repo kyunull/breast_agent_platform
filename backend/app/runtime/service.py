@@ -119,6 +119,7 @@ def append_trace(db: Session, run_id: str, trace_data: Mapping[str, Any]) -> Nod
         node_id=str(trace_data.get("node_id", "")),
         parent_trace_id=trace_data.get("parent_trace_id"),
         status=str(trace_data.get("status", "queued")),
+        sequence=int(trace_data.get("sequence", 0)),
         attempt=int(trace_data.get("attempt", 1)),
         input_summary_json=dict(trace_data.get("input_summary", {})),
         output_json=trace_data.get("output"),

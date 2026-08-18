@@ -246,6 +246,7 @@ def _trace_read(trace: NodeTrace) -> TraceRead:
         node_id=trace.node_id,
         parent_trace_id=trace.parent_trace_id,
         status=trace.status,
+        sequence=trace.sequence,
         attempt=trace.attempt,
         input_summary=trace.input_summary_json,
         output=trace.output_json,
@@ -313,9 +314,13 @@ def execute_persisted_run(app: Any, run_id: str, raw_input: dict[str, Any]) -> W
         db.commit()
         trace_ids: dict[str, str] = {}
         evidence_trace_ids: dict[str, str] = {}
+        trace_sequence = 0
 
         def trace_sink(data: dict[str, Any]) -> None:
+            nonlocal trace_sequence
+            trace_sequence += 1
             safe = dict(data)
+            safe["sequence"] = trace_sequence
             parent_node_id = safe.get("parent_trace_id")
             safe["parent_trace_id"] = (
                 trace_ids.get(str(parent_node_id)) if parent_node_id is not None else None
@@ -549,7 +554,7 @@ def list_traces_endpoint(
         db.scalars(
             select(NodeTrace)
             .where(NodeTrace.run_id == run.id)
-            .order_by(NodeTrace.created_at, NodeTrace.id)
+            .order_by(NodeTrace.sequence, NodeTrace.created_at, NodeTrace.id)
         )
     )
     return [_trace_read(trace) for trace in traces]

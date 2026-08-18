@@ -121,6 +121,7 @@ def test_runtime_api_persists_rag_to_llm_evidence_chain(client, medical_token):
     }
     traces = client.get(f"/api/v1/runs/{run_body['id']}/traces", headers=headers)
     assert [trace["node_id"] for trace in traces.json()] == ["input", "rag", "llm", "output"]
+    assert [trace["sequence"] for trace in traces.json()] == [1, 2, 3, 4]
     llm_trace = next(trace for trace in traces.json() if trace["node_id"] == "llm")
     assert llm_trace["input_summary"]
     assert "HER2 阳性晚期乳腺癌指南原文" not in str(llm_trace["input_summary"])

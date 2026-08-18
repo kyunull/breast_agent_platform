@@ -38,6 +38,7 @@ class TraceRead(BaseModel):
     node_id: str
     parent_trace_id: str | None
     status: str
+    sequence: int
     attempt: int
     input_summary: dict[str, Any] = Field(validation_alias="input_summary_json")
     output: dict[str, Any] | None = Field(default=None, validation_alias="output_json")
