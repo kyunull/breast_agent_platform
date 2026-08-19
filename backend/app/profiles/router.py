@@ -1,3 +1,6 @@
+import re
+import time
+from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,12 +11,21 @@ from app.auth.dependencies import get_current_user, require_role
 from app.core.database import get_request_db
 from app.core.governance import redact_hidden_parameters
 from app.profiles.models import KnowledgeProfile, ModelProfile
-from app.profiles.schemas import AdminProfileRead, MedicalProfileRead, ProfileCreate, ProfilePatch
+from app.profiles.schemas import (
+    AdminProfileRead,
+    MedicalProfileRead,
+    ModelProfileConnectionTest,
+    ModelProfileConnectionTestRead,
+    ProfileCreate,
+    ProfilePatch,
+)
 from app.profiles.service import create_profile, get_profile, list_profiles, update_profile
+from app.runtime.model_gateway import GatewayError, OpenAICompatibleGateway
 from app.users.models import User
 
 router = APIRouter(prefix="/api/v1", tags=["profiles"])
 _admin_user = require_role("admin_developer")
+_API_KEY_PATTERN = re.compile(r"\b(?:sk|rk|pk|api)[-_][A-Za-z0-9_-]+\b", re.IGNORECASE)
 
 
 def _read(profile: Any, *, admin: bool) -> AdminProfileRead | MedicalProfileRead:
@@ -74,6 +86,29 @@ def create_model_profile(
     db: Annotated[Session, Depends(get_request_db)],
 ):
     return _create_endpoint(ModelProfile, payload, db, current_user)
+
+
+@router.post("/model-profiles/test", response_model=ModelProfileConnectionTestRead)
+def test_model_profile_connection(
+    payload: ModelProfileConnectionTest,
+    current_user: Annotated[User, Depends(_admin_user)],
+):
+    started = time.perf_counter()
+    try:
+        result = OpenAICompatibleGateway().complete(
+            SimpleNamespace(technical_config_json=payload.technical_config),
+            [{"role": "user", "content": "请仅回复：连接成功。"}],
+        )
+    except GatewayError as exc:
+        message = _API_KEY_PATTERN.sub("[redacted]", str(exc))
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "model_connection_failed", "message": message},
+        ) from exc
+    return ModelProfileConnectionTestRead(
+        model=result.model,
+        latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
+    )
 
 
 @router.post("/knowledge-profiles", response_model=AdminProfileRead, status_code=status.HTTP_201_CREATED)

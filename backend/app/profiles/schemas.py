@@ -122,6 +122,30 @@ class ProfilePatch(BaseModel):
         return self
 
 
+class ModelProfileConnectionTest(BaseModel):
+    technical_config: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_config(self) -> "ModelProfileConnectionTest":
+        self.technical_config = _validate_technical_config(self.technical_config)
+        if self.technical_config.get("provider") != "openai_compatible":
+            raise ValueError("provider must be openai_compatible")
+        if not isinstance(self.technical_config.get("base_url"), str) or not self.technical_config[
+            "base_url"
+        ].strip():
+            raise ValueError("base_url is required")
+        model = self.technical_config.get("model") or self.technical_config.get("model_name")
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model or model_name is required")
+        return self
+
+
+class ModelProfileConnectionTestRead(BaseModel):
+    ok: bool = True
+    model: str
+    latency_ms: int = Field(ge=0)
+
+
 class MedicalProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
