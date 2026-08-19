@@ -108,8 +108,15 @@ export interface ProfileCreatePayload {
   name: string
   description?: string
   exposed_to_medical: boolean
+  is_active?: boolean
   medical_options: Record<string, unknown>
   technical_config: Record<string, unknown>
+}
+
+export interface ModelProfileConnectionTestResponse {
+  ok: boolean
+  model: string
+  latency_ms: number
 }
 
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
