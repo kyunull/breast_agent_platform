@@ -305,3 +305,33 @@ def test_model_profile_connection_gateway_error_does_not_expose_secret(
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "model_connection_failed"
     assert "sk-test-secret" not in response.text
+
+
+def test_model_profile_connection_gateway_error_does_not_expose_arbitrary_provider_payload(
+    client, admin_token, monkeypatch
+):
+    secret_message = (
+        'provider response: {"password":"secret", "authorization":"Bearer token-secret", '
+        '"request_id":"req-123"}'
+    )
+
+    class FakeGateway:
+        def complete(self, profile, messages):
+            raise GatewayError(secret_message)
+
+    monkeypatch.setattr(profiles_router, "OpenAICompatibleGateway", FakeGateway)
+
+    response = client.post(
+        "/api/v1/model-profiles/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=_model_connection_payload(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "model_connection_failed",
+        "message": "模型连接测试失败，请检查配置后重试",
+    }
+    assert "secret" not in response.text
+    assert "Bearer token-secret" not in response.text
+    assert "req-123" not in response.text

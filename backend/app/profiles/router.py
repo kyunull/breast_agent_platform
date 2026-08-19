@@ -1,4 +1,3 @@
-import re
 import time
 from types import SimpleNamespace
 from typing import Annotated, Any
@@ -25,9 +24,6 @@ from app.users.models import User
 
 router = APIRouter(prefix="/api/v1", tags=["profiles"])
 _admin_user = require_role("admin_developer")
-_API_KEY_PATTERN = re.compile(r"\b(?:sk|rk|pk|api)[-_][A-Za-z0-9_-]+\b", re.IGNORECASE)
-
-
 def _read(profile: Any, *, admin: bool) -> AdminProfileRead | MedicalProfileRead:
     if admin:
         return AdminProfileRead(
@@ -100,10 +96,9 @@ def test_model_profile_connection(
             [{"role": "user", "content": "请仅回复：连接成功。"}],
         )
     except GatewayError as exc:
-        message = _API_KEY_PATTERN.sub("[redacted]", str(exc))
         raise HTTPException(
             status_code=422,
-            detail={"code": "model_connection_failed", "message": message},
+            detail={"code": "model_connection_failed", "message": "模型连接测试失败，请检查配置后重试"},
         ) from exc
     return ModelProfileConnectionTestRead(
         model=result.model,
