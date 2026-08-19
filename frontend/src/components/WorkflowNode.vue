@@ -1,10 +1,10 @@
 <template>
   <div class="workflow-node" :class="`workflow-node--${data.graphNode.type}`">
-    <Handle id="input" :position="Position.Left" type="target" />
+    <Handle v-if="data.graphNode.type !== 'input'" id="input" :position="Position.Left" type="target" />
     <div class="workflow-node__topline"><span>{{ typeLabel }}</span><span class="workflow-node__id">{{ id.slice(0, 5) }}</span></div>
     <strong>{{ data.graphNode.name }}</strong>
     <p>{{ summary }}</p>
-    <Handle id="output" :position="Position.Right" type="source" />
+    <Handle v-if="data.graphNode.type !== 'output'" id="output" :position="Position.Right" type="source" />
   </div>
 </template>
 

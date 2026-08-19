@@ -14,23 +14,23 @@
           <LayoutDashboard :size="18" aria-hidden="true" />
           <span>工作流</span>
         </RouterLink>
-        <RouterLink v-if="auth.isAdmin" class="nav-item" to="/settings/profiles">
+        <RouterLink v-if="auth.isAdmin" class="nav-item" :to="{ name: 'profiles' }">
           <SlidersHorizontal :size="18" aria-hidden="true" />
-          <span>Profile 管理</span>
+          <span>配置档案管理</span>
         </RouterLink>
       </nav>
 
       <div class="shell__nav-footer">
         <span class="status-dot" aria-hidden="true"></span>
         <span>本地服务</span>
-        <span class="shell__nav-version">v0.1</span>
+        <span class="shell__nav-version">版本 0.1</span>
       </div>
     </aside>
 
     <section class="shell__main">
       <header class="shell__header">
         <div>
-          <p class="shell__section-label">Breast Cancer Decision Platform</p>
+          <p class="shell__section-label">乳腺癌决策智能体平台</p>
           <h1>{{ route.meta.title ?? '工作流工作区' }}</h1>
         </div>
         <div class="shell__header-actions">
@@ -67,16 +67,19 @@ async function handleLogout() {
 <style scoped>
 .shell {
   display: grid;
-  min-height: 100vh;
-  grid-template-columns: 244px minmax(0, 1fr);
+  min-height: 100dvh;
+  grid-template-columns: 224px minmax(0, 1fr);
   background: var(--paper-200);
 }
 
 .shell__nav {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  padding: 24px 18px;
+  position: sticky;
+  top: 0;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding: 20px 16px;
   color: #dfe8e5;
   background: var(--ink-950);
 }
@@ -85,7 +88,7 @@ async function handleLogout() {
   display: flex;
   gap: 12px;
   align-items: center;
-  padding: 6px 8px 28px;
+  padding: 6px 8px 22px;
   border-bottom: 1px solid rgb(223 232 229 / 16%);
 }
 
@@ -95,7 +98,7 @@ async function handleLogout() {
   height: 38px;
   place-items: center;
   color: var(--ink-950);
-  font-family: "STKaiti", "KaiTi", serif;
+  font-family: "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
   font-size: 23px;
   font-weight: 700;
   background: #a9dbd3;
@@ -120,14 +123,14 @@ async function handleLogout() {
 .nav-list {
   display: grid;
   gap: 5px;
-  margin-top: 28px;
+  margin-top: 22px;
 }
 
 .nav-item {
   display: flex;
   gap: 10px;
   align-items: center;
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 12px;
   color: #b9cbc9;
   font-size: 14px;
@@ -172,9 +175,9 @@ async function handleLogout() {
   gap: 16px;
   align-items: center;
   justify-content: space-between;
-  min-height: 86px;
-  padding: 17px 34px;
-  background: rgb(248 247 243 / 88%);
+  min-height: 74px;
+  padding: 14px clamp(22px, 3vw, 38px);
+  background: rgb(251 250 247 / 92%);
   border-bottom: 1px solid var(--line);
 }
 
@@ -238,9 +241,13 @@ async function handleLogout() {
   border-color: #d48e92;
 }
 
+.icon-button:active {
+  transform: translateY(1px);
+}
+
 .shell__content {
   min-width: 0;
-  padding: 30px 34px 42px;
+  padding: clamp(24px, 3vw, 38px) clamp(22px, 3vw, 38px) 48px;
 }
 
 .sr-only {
@@ -260,19 +267,45 @@ async function handleLogout() {
   }
 
   .shell__nav {
+    position: static;
+    max-height: none;
     min-height: auto;
-    padding: 12px 14px;
+    padding: 12px 16px 10px;
   }
 
   .brand-lockup {
-    padding-bottom: 12px;
+    padding: 0 4px 10px;
+  }
+
+  .brand-lockup__mark {
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
+  }
+
+  .brand-lockup strong {
+    font-size: 14px;
+  }
+
+  .brand-lockup div span {
+    margin-top: 1px;
+    font-size: 10px;
   }
 
   .nav-list {
     grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    margin-top: 12px;
+    grid-auto-columns: minmax(max-content, 1fr);
+    gap: 6px;
+    margin-top: 9px;
     overflow-x: auto;
+  }
+
+  .nav-item {
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 12px;
+    background: rgb(255 255 255 / 4%);
   }
 
   .shell__nav-footer {
@@ -280,16 +313,39 @@ async function handleLogout() {
   }
 
   .shell__header {
-    min-height: 76px;
-    padding: 14px 18px;
+    min-height: 68px;
+    padding: 12px 16px;
   }
 
   .shell__header h1 {
     font-size: 18px;
   }
 
+  .shell__section-label {
+    font-size: 9px;
+  }
+
+  .shell__header-actions {
+    gap: 8px;
+  }
+
+  .role-badge {
+    padding: 5px 7px;
+    font-size: 10px;
+  }
+
   .shell__content {
-    padding: 20px 16px 28px;
+    padding: 22px 16px 32px;
+  }
+}
+
+@media (max-width: 420px) {
+  .shell__section-label {
+    display: none;
+  }
+
+  .shell__header h1 {
+    font-size: 17px;
   }
 }
 </style>

@@ -2,7 +2,7 @@
   <section class="workflows-page">
     <div class="page-heading">
       <div>
-        <p class="page-eyebrow">Decision library</p>
+        <p class="page-eyebrow">决策工作流</p>
         <h2>工作流</h2>
         <p class="page-description">管理临床决策方案的草稿、发布版本和测试入口。</p>
       </div>
@@ -124,5 +124,16 @@ async function create() {
 .row-actions a { display: grid; width: 30px; height: 30px; color: var(--ink-650); place-items: center; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .row-actions a:hover { color: var(--teal-700); border-color: #90c1b7; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 620px) { .page-heading { display: block; } .page-heading :deep(.el-button) { width: 100%; margin-top: 18px; } }
+@media (max-width: 820px) {
+  .page-heading { align-items: flex-start; }
+  .workflow-table th,
+  .workflow-table td { padding-right: 14px; padding-left: 14px; }
+}
+@media (max-width: 620px) {
+  .page-heading { display: block; margin-bottom: 20px; }
+  .page-heading h2 { font-size: 24px; }
+  .page-heading :deep(.el-button) { width: 100%; margin-top: 16px; }
+  .workflow-table-wrap { box-shadow: none; }
+  .workflow-table { min-width: 680px; }
+}
 </style>

@@ -42,5 +42,5 @@ const items: Array<{ type: GraphNodeType; label: string; icon: unknown }> = [
 .palette-item svg:last-child { opacity: 0; }
 .palette-item:hover { color: var(--teal-700); background: #e4f2ee; border-color: #afd0c8; }
 .palette-item:hover svg:last-child { opacity: 1; }
-@media (max-width: 760px) { .node-palette { min-width: 145px; } }
+@media (max-width: 760px) { .node-palette { min-width: 145px; }.node-palette__heading { padding: 13px 11px 10px; }.node-palette__group { padding: 8px 6px; } }
 </style>

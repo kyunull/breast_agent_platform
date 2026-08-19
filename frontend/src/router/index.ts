@@ -42,7 +42,8 @@ router.beforeEach(async (to) => {
     return true
   }
   if (!auth.isAuthenticated) return { name: 'login', query: { redirect: to.fullPath } }
-  if (to.meta.adminOnly && !canAccessProfiles(auth.user?.role)) return { name: 'workflows' }
+  const requiresAdmin = to.matched.some((record) => record.meta.adminOnly === true)
+  if (requiresAdmin && !canAccessProfiles(auth.user?.role)) return { name: 'workflows' }
   return true
 })
 

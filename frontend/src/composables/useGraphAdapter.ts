@@ -1,4 +1,5 @@
 import type { Edge, Node } from '@vue-flow/core'
+import { toRaw } from 'vue'
 
 import type { GraphEdge, GraphNode, GraphNodeType, WorkflowGraph } from '@/types/graph'
 
@@ -14,20 +15,23 @@ export interface NodeClipboardPayload {
 }
 
 export function toFlowNode(node: GraphNode): Node<FlowNodeData> {
+  const rawNode = toRaw(node)
   return {
-    id: node.id,
+    id: rawNode.id,
     type: 'clinical-node',
-    position: node.position,
-    data: { graphNode: structuredClone(node), label: node.name },
+    position: { x: rawNode.position.x, y: rawNode.position.y },
+    data: { graphNode: structuredClone(rawNode), label: rawNode.name },
   }
 }
 
 export function toGraphNode(node: Node<FlowNodeData>): GraphNode {
   if (!node.data?.graphNode) throw new Error(`Vue Flow node ${node.id} is missing graph data`)
+  const rawNode = toRaw(node)
+  const rawData = toRaw(node.data)
   return {
-    ...structuredClone(node.data.graphNode),
-    id: node.id,
-    position: { x: node.position.x, y: node.position.y },
+    ...structuredClone(toRaw(rawData.graphNode)),
+    id: rawNode.id,
+    position: { x: rawNode.position.x, y: rawNode.position.y },
   }
 }
 

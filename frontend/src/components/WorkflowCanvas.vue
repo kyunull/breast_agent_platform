@@ -1,6 +1,6 @@
 <template>
   <div class="flow-canvas">
-    <VueFlow v-model:nodes="nodes" v-model:edges="edges" class="clinical-flow" fit-view-on-init :default-viewport="{ x: 0, y: 0, zoom: 0.9 }" @connect="onConnect" @node-click="onNodeClick" @node-drag-stop="syncGraph">
+    <VueFlow :nodes="nodes" :edges="edges" :delete-key-code="['Backspace', 'Delete']" class="clinical-flow" fit-view-on-init :default-viewport="{ x: 0, y: 0, zoom: 0.9 }" @connect="onConnect" @node-click="onNodeClick" @update:nodes="onNodesChange" @update:edges="onEdgesChange">
       <Background :gap="20" color="#cbd2cc" pattern-color="#cbd2cc" />
       <Controls :show-interactive="false" />
       <template #node-clinical-node="nodeProps"><WorkflowNode v-bind="nodeProps" /></template>
@@ -32,15 +32,24 @@ watch(() => props.graph, (graph) => {
   queueMicrotask(() => { syncingFromParent = false })
 }, { deep: true, immediate: true })
 
-watch([nodes, edges], () => syncGraph(), { deep: true })
-
 function syncGraph() {
   if (syncingFromParent) return
   const graph: WorkflowGraph = {
     nodes: nodes.value.map((node) => toGraphNode(node)),
     edges: edges.value.map((edge) => toGraphEdge(edge)),
   }
+  if (JSON.stringify(graph) === JSON.stringify(props.graph)) return
   emit('update', graph)
+}
+
+function onNodesChange(nextNodes: Node<FlowNodeData>[]) {
+  nodes.value = nextNodes
+  syncGraph()
+}
+
+function onEdgesChange(nextEdges: Edge[]) {
+  edges.value = nextEdges
+  syncGraph()
 }
 
 function onConnect(connection: Connection) {
@@ -57,11 +66,14 @@ function onNodeClick(event: NodeMouseEvent) {
 </script>
 
 <style scoped>
-.flow-canvas { position: relative; min-width: 660px; min-height: 560px; background: #edf0ec; }
+.flow-canvas { position: relative; min-width: 0; min-height: 560px; overflow: hidden; background: #edf0ec; }
 .clinical-flow { width: 100%; height: 560px; }
 .canvas-status { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 6px; align-items: center; padding: 5px 8px; color: var(--ink-650); font-size: 10px; background: rgb(248 247 243 / 90%); border: 1px solid var(--line); border-radius: var(--radius-sm); pointer-events: none; }
 .canvas-status span { width: 6px; height: 6px; background: var(--teal-600); border-radius: 50%; }
 :deep(.vue-flow__controls) { box-shadow: 0 2px 8px rgb(16 38 49 / 15%); }
 :deep(.vue-flow__controls-button) { color: var(--ink-800); background: var(--paper-100); border-bottom-color: var(--line); }
 :deep(.vue-flow__edge-path) { stroke: #627d7a; stroke-width: 2; }
+:deep(.vue-flow__handle) { width: 10px; height: 10px; background: var(--teal-700); border: 2px solid #fffefa; box-shadow: 0 0 0 1px #53736e; }
+:deep(.vue-flow__handle.connecting) { background: var(--teal-600); box-shadow: 0 0 0 3px rgb(39 137 123 / 20%); }
+@media (max-width: 760px) { .canvas-status { right: 10px; bottom: 9px; } }
 </style>

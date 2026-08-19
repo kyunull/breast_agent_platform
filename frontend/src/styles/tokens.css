@@ -1,23 +1,26 @@
 :root {
   color: #1c2830;
   background: #eceae4;
-  font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-family: "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink-950: #102631;
   --ink-800: #183947;
   --ink-650: #4e6670;
-  --paper-100: #f8f7f3;
-  --paper-200: #eceae4;
-  --paper-300: #dfded7;
-  --teal-700: #08766f;
-  --teal-600: #099486;
+  --paper-100: #fbfaf7;
+  --paper-200: #eef0ed;
+  --paper-300: #e1e5e0;
+  --teal-700: #08756d;
+  --teal-600: #118f83;
+  --teal-100: #e4f2ee;
   --amber-600: #a95f05;
   --red-700: #a42e36;
-  --line: #c9cfca;
+  --line: #c7d0ca;
+  --line-strong: #aebcb5;
   --radius-sm: 4px;
   --radius-md: 8px;
-  --shadow-panel: 0 10px 24px rgb(16 38 49 / 10%);
+  --shadow-panel: 0 12px 30px rgb(16 38 49 / 7%);
+  --shadow-raised: 0 3px 12px rgb(16 38 49 / 9%);
 }
 
 * {
@@ -34,6 +37,57 @@ body,
 
 body {
   background-color: var(--paper-200);
+}
+
+button,
+a,
+input,
+textarea,
+select,
+.el-button,
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  outline: 3px solid rgb(17 143 131 / 22%);
+  outline-offset: 2px;
+}
+
+.el-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--teal-700);
+  --el-button-border-color: var(--teal-700);
+  --el-button-hover-bg-color: var(--teal-600);
+  --el-button-hover-border-color: var(--teal-600);
+  --el-button-active-bg-color: var(--teal-700);
+  --el-button-active-border-color: var(--teal-700);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line) inset;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--line-strong) inset;
 }
 
 button,
@@ -60,7 +114,7 @@ select {
   max-width: 580px;
   margin: 0;
   color: var(--ink-950);
-  font-family: "STKaiti", "KaiTi", serif;
+  font-family: "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
   font-size: 38px;
   font-weight: 600;
   letter-spacing: 0;
@@ -77,4 +131,12 @@ select {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  html,
+  body,
+  #app {
+    min-width: 0;
+  }
 }

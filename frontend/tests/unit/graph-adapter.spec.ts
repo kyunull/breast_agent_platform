@@ -17,6 +17,13 @@ describe('graph adapter', () => {
     expect(toGraphNode(toFlowNode(node))).toEqual(node)
   })
 
+  it('keeps Vue Flow position updates isolated from the source graph', () => {
+    const flowNode = toFlowNode(node)
+    flowNode.position.x = 999
+
+    expect(node.position.x).toBe(120)
+  })
+
   it('strips secrets and real-patient values from clipboard JSON', () => {
     const safe = sanitizeNodeClipboard(node)
     const parsed = JSON.stringify(safe)
