@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { modelFormToPayload, modelProfileToForm } from '@/composables/useModelProfileForm'
+import { testModelProfile } from '@/api/profiles'
+import { apiClient } from '@/api/client'
 
 describe('model profile form adapter', () => {
   it('serializes technical and medical model settings without raw api keys', () => {
@@ -26,5 +28,14 @@ describe('model profile form adapter', () => {
   it('splits comma separated supported tasks and preserves arrays', () => {
     expect(modelFormToPayload({ supported_tasks: '判断, 总结', name: 'x' }).medical_options.supported_tasks).toEqual(['判断', '总结'])
     expect(modelFormToPayload({ supported_tasks: ['判断', '总结'], name: 'x' }).medical_options.supported_tasks).toEqual(['判断', '总结'])
+  })
+
+  it('sends only the typed technical configuration for a connection test', async () => {
+    const request = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { ok: true, model: 'gpt-test', latency_ms: 1 } } as never)
+    await testModelProfile({ provider: 'openai_compatible', base_url: 'http://models.test/v1', model: 'gpt-test', api_key_ref: 'MODEL_API_KEY_REF' })
+    expect(request).toHaveBeenCalledWith('/api/v1/model-profiles/test', {
+      technical_config: { provider: 'openai_compatible', base_url: 'http://models.test/v1', model: 'gpt-test', api_key_ref: 'MODEL_API_KEY_REF' },
+    })
+    request.mockRestore()
   })
 })
