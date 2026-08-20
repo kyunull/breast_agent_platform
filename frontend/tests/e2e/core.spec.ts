@@ -1,4 +1,21 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+async function expectNoHorizontalPageOverflow(page: Page) {
+  const dimensions = await page.locator('html').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }))
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+}
+
+async function expectWithinViewport(page: Page, selector: string) {
+  const box = await page.locator(selector).boundingBox()
+  const viewport = page.viewportSize()
+  expect(box).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width)
+}
 
 test('shows the local clinical workspace login', async ({ page }) => {
   await page.goto('/login')
@@ -150,12 +167,14 @@ test('supports canvas controls, clipping, and connecting workflow nodes', async 
 
 test('workflow tabs keep the saved draft across data, editor, and test views', async ({ page }) => {
   const pageErrors: string[] = []
-  const draft = {
+  let savedDraft = {
     id: 'draft-1', workflow_id: 'workflow-1', version_number: 7, status: 'draft', name: '多页签草稿', description: null,
     graph: { nodes: [], edges: [] }, extraction: { groups: [] }, metadata: {}, template_refs: [], definition_sha256: null,
   }
+  let patchBody: unknown
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.addInitScript(() => sessionStorage.setItem('breast-agent-token', 'e2e-token'))
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.route('http://127.0.0.1:8000/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
@@ -164,12 +183,13 @@ test('workflow tabs keep the saved draft across data, editor, and test views', a
       return
     }
     if (path === '/api/v1/workflows/workflow-1/draft' && request.method() === 'GET') {
-      await route.fulfill({ json: draft })
+      await route.fulfill({ json: savedDraft })
       return
     }
     if (path === '/api/v1/workflows/workflow-1/draft' && request.method() === 'PATCH') {
-      Object.assign(draft, request.postDataJSON())
-      await route.fulfill({ json: draft })
+      patchBody = request.postDataJSON()
+      savedDraft = { ...savedDraft, ...(patchBody as object) }
+      await route.fulfill({ json: savedDraft })
       return
     }
     if (path === '/api/v1/workflows/workflow-1/versions' || path === '/api/v1/model-profiles' || path === '/api/v1/knowledge-profiles') {
@@ -186,25 +206,78 @@ test('workflow tabs keep the saved draft across data, editor, and test views', a
   await page.getByRole('link', { name: '数据准备' }).click()
   await expect(page).toHaveURL('/workflows/workflow-1/data')
   await expect(page.getByRole('link', { name: '数据准备' })).toHaveClass(/is-active/)
+  await expectWithinViewport(page, '.data-preparation')
+  await expectNoHorizontalPageOverflow(page)
   const groupLabel = page.getByPlaceholder('业务分组名称')
   await groupLabel.fill('病理资料')
   await groupLabel.press('Tab')
   await expect(page.getByRole('button', { name: '未保存修改' })).toBeVisible()
 
-  const saved = page.waitForRequest((request) => request.method() === 'PATCH' && new URL(request.url()).pathname === '/api/v1/workflows/workflow-1/draft')
-  await page.getByRole('button', { name: '未保存修改' }).click()
-  await saved
-  await expect(page.getByRole('button', { name: '已保存' })).toBeVisible()
-
   await page.getByRole('link', { name: '流程编辑' }).click()
   await expect(page).toHaveURL('/workflows/workflow-1/edit')
   await expect(page.getByRole('link', { name: '流程编辑' })).toHaveClass(/is-active/)
+  await expect(page.locator('.clinical-flow')).toBeVisible()
+  await expectWithinViewport(page, '.editor-workspace')
+  await expectNoHorizontalPageOverflow(page)
+
+  const saved = page.waitForRequest((request) => request.method() === 'PATCH' && new URL(request.url()).pathname === '/api/v1/workflows/workflow-1/draft')
+  await page.locator('.workspace-actions').getByRole('button', { name: '未保存修改' }).click()
+  await saved
+  expect(patchBody).toEqual(expect.objectContaining({
+    extraction: expect.objectContaining({ groups: [expect.objectContaining({ label: '病理资料' })] }),
+  }))
+  await expect(page.locator('.workspace-actions').getByRole('button', { name: '已保存' })).toBeVisible()
+
   await page.getByRole('link', { name: '在线测试' }).click()
   await expect(page).toHaveURL('/workflows/workflow-1/test')
   await expect(page.getByRole('link', { name: '在线测试' })).toHaveClass(/is-active/)
 
+  const hydrated = page.waitForRequest((request) => request.method() === 'GET' && new URL(request.url()).pathname === '/api/v1/workflows/workflow-1/draft')
+  await page.reload()
+  await hydrated
   await page.getByRole('link', { name: '数据准备' }).click()
   await expect(page.getByPlaceholder('业务分组名称')).toHaveValue('病理资料')
-  expect(draft.extraction).toEqual(expect.objectContaining({ groups: [expect.objectContaining({ label: '病理资料' })] }))
+  expect(savedDraft.extraction).toEqual(expect.objectContaining({ groups: [expect.objectContaining({ label: '病理资料' })] }))
   expect(pageErrors).toEqual([])
+})
+
+test('keeps workflow data and editor layouts within a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.addInitScript(() => sessionStorage.setItem('breast-agent-token', 'e2e-token'))
+  await page.route('http://127.0.0.1:8000/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/v1/me') {
+      await route.fulfill({ json: { id: 'admin-1', username: 'admin', display_name: '管理员', role: 'admin_developer', is_active: true } })
+      return
+    }
+    if (path === '/api/v1/workflows/workflow-1/draft') {
+      await route.fulfill({ json: {
+        id: 'draft-1', workflow_id: 'workflow-1', version_number: 1, status: 'draft', name: '窄屏布局验证', description: null,
+        graph: { nodes: [], edges: [] }, extraction: { groups: [] }, metadata: {}, template_refs: [], definition_sha256: null,
+      } })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/workflows/workflow-1/data')
+  await expect(page.getByRole('link', { name: '数据准备' })).toHaveClass(/is-active/)
+  await expectWithinViewport(page, '.data-preparation')
+  await expectNoHorizontalPageOverflow(page)
+
+  await page.getByRole('link', { name: '流程编辑' }).click()
+  await expect(page).toHaveURL('/workflows/workflow-1/edit')
+  await expect(page.getByRole('link', { name: '流程编辑' })).toHaveClass(/is-active/)
+  await expectWithinViewport(page, '.editor-workspace')
+  await expectNoHorizontalPageOverflow(page)
+
+  const canvas = page.locator('.clinical-flow')
+  await canvas.scrollIntoViewIfNeeded()
+  await expect(canvas).toBeVisible()
+  const canvasBox = await canvas.boundingBox()
+  const workspaceBox = await page.locator('.editor-workspace').boundingBox()
+  expect(canvasBox).not.toBeNull()
+  expect(workspaceBox).not.toBeNull()
+  expect(canvasBox!.x + canvasBox!.width).toBeGreaterThan(workspaceBox!.x)
+  expect(canvasBox!.x).toBeLessThan(workspaceBox!.x + workspaceBox!.width)
 })
