@@ -1,7 +1,9 @@
-import { canAccessProfiles } from '@/router'
+import { canAccessProfiles, canAccessSystemSettings } from '@/router'
 
 describe('role route policy', () => {
-  it('blocks profile management for medical users', () => {
+  it('allows only administrators to access system settings', () => {
+    expect(canAccessSystemSettings('medical_user')).toBe(false)
+    expect(canAccessSystemSettings('admin_developer')).toBe(true)
     expect(canAccessProfiles('medical_user')).toBe(false)
     expect(canAccessProfiles('admin_developer')).toBe(true)
   })

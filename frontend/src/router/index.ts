@@ -4,9 +4,11 @@ import AppShell from '@/layouts/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { UserRole } from '@/types/api'
 
-export function canAccessProfiles(role: UserRole | undefined | null) {
+export function canAccessSystemSettings(role: UserRole | undefined | null) {
   return role === 'admin_developer'
 }
+
+export const canAccessProfiles = canAccessSystemSettings
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,7 +29,7 @@ const router = createRouter({
       path: '/settings',
       component: AppShell,
       children: [
-        { path: 'profiles', name: 'profiles', component: () => import('@/views/ProfileSettingsView.vue'), meta: { adminOnly: true } },
+        { path: 'profiles', name: 'profiles', component: () => import('@/views/ProfileSettingsView.vue'), meta: { adminOnly: true, title: '系统配置' } },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/workflows' },
@@ -43,7 +45,7 @@ router.beforeEach(async (to) => {
   }
   if (!auth.isAuthenticated) return { name: 'login', query: { redirect: to.fullPath } }
   const requiresAdmin = to.matched.some((record) => record.meta.adminOnly === true)
-  if (requiresAdmin && !canAccessProfiles(auth.user?.role)) return { name: 'workflows' }
+  if (requiresAdmin && !canAccessSystemSettings(auth.user?.role)) return { name: 'workflows' }
   return true
 })
 

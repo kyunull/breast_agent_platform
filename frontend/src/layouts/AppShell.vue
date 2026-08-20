@@ -16,7 +16,7 @@
         </RouterLink>
         <RouterLink v-if="auth.isAdmin" class="nav-item" :to="{ name: 'profiles' }">
           <SlidersHorizontal :size="18" aria-hidden="true" />
-          <span>配置档案管理</span>
+          <span>系统配置</span>
         </RouterLink>
       </nav>
 
