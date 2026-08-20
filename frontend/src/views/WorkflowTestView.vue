@@ -75,6 +75,8 @@ watch(workflowId, (next, previous) => {
   selectedModel.value = ''
   errorMessage.value = ''
   evidenceError.value = ''
+  evidenceLoading.value = false
+  running.value = false
   runStore.setRun(null)
   runStore.setTraces([])
   runStore.closeEvidence()
@@ -109,12 +111,33 @@ async function loadTraces(runId: string, expectedWorkflowId: string) {
   }
 }
 
-async function cancel() { polling.stop(); if (currentRunId.value) { try { await cancelRun(currentRunId.value); const next = await getRun(currentRunId.value); runStore.setRun(next) } catch (error) { errorMessage.value = getApiError(error).message } } }
+async function cancel() {
+  polling.stop()
+  const expectedWorkflowId = workflowId.value
+  const runId = currentRunId.value
+  if (!runId) return
+  try {
+    await cancelRun(runId)
+    const next = await getRun(runId)
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) runStore.setRun(next)
+  } catch (error) {
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) errorMessage.value = getApiError(error).message
+  }
+}
 
 async function openEvidence(evidenceId: string) {
-  if (!currentRunId.value) return
+  const expectedWorkflowId = workflowId.value
+  const runId = currentRunId.value
+  if (!runId) return
   evidenceLoading.value = true; evidenceError.value = ''; runStore.isEvidenceOpen = true
-  try { runStore.openEvidence(await getEvidence(currentRunId.value, evidenceId)) } catch (error) { evidenceError.value = getApiError(error).message } finally { evidenceLoading.value = false }
+  try {
+    const evidence = await getEvidence(runId, evidenceId)
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) runStore.openEvidence(evidence)
+  } catch (error) {
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) evidenceError.value = getApiError(error).message
+  } finally {
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) evidenceLoading.value = false
+  }
 }
 </script>
 

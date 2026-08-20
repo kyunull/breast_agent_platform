@@ -5,7 +5,9 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
+  cancelRun: vi.fn(),
   createRun: vi.fn(),
+  getEvidence: vi.fn(),
   getRun: vi.fn(),
   getTraces: vi.fn(),
   listModelProfiles: vi.fn(),
@@ -17,9 +19,9 @@ vi.mock('vue-router', async () => {
   return { useRoute: () => route }
 })
 vi.mock('@/api/runs', () => ({
-  cancelRun: vi.fn(),
+  cancelRun: api.cancelRun,
   createRun: api.createRun,
-  getEvidence: vi.fn(),
+  getEvidence: api.getEvidence,
   getRun: api.getRun,
   getTraces: api.getTraces,
 }))
@@ -42,6 +44,8 @@ describe('WorkflowTestView', () => {
     ;(useRoute() as unknown as { params: { id: string } }).params.id = 'workflow-A'
     useWorkflowStore().draft = { graph: { nodes: [], edges: [] } } as never
     api.createRun.mockImplementation((payload: { workflow_id: string }) => Promise.resolve({ ...run, workflow_id: payload.workflow_id }))
+    api.cancelRun.mockResolvedValue(undefined)
+    api.getEvidence.mockResolvedValue({ run_id: run.id, evidence_id: 'ev-1', title: 'A evidence', content: 'A' })
     api.getRun.mockResolvedValue(run)
     api.getTraces.mockResolvedValue([])
     api.listModelProfiles.mockResolvedValue([])
@@ -114,5 +118,91 @@ describe('WorkflowTestView', () => {
 
     expect(useRunStore().run).toBeNull()
     expect(useRunStore().traces).toEqual([])
+  })
+
+  it('keeps the new workflow polling after a previous workflow request rejects', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const activeA = { ...run, id: 'run-A', workflow_id: 'workflow-A', status: 'running' as const }
+    const activeB = { ...run, id: 'run-B', workflow_id: 'workflow-B', status: 'running' as const }
+    let rejectA!: (reason?: unknown) => void
+    let resolveB!: (value: typeof activeB) => void
+    api.createRun.mockImplementation((payload: { workflow_id: string }) => Promise.resolve(payload.workflow_id === 'workflow-A' ? activeA : activeB))
+    api.getRun
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectA = reject }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve }))
+
+    void (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    void (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+    rejectA(new Error('A failed'))
+    await nextTick()
+
+    const vm = wrapper.vm as unknown as { polling: { active: { value: boolean }; error: { value: unknown } } }
+    expect(vm.polling.active.value).toBe(true)
+    expect(vm.polling.error.value).toBeNull()
+
+    resolveB(activeB)
+    await nextTick()
+    expect(useRunStore().run?.workflow_id).toBe('workflow-B')
+  })
+
+  it('does not write a cancelled run after switching workflows', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const runA = { ...run, id: 'run-A', workflow_id: 'workflow-A', status: 'succeeded' as const }
+    let resolveCancel!: () => void
+    let resolveCancelledRun!: (value: typeof runA) => void
+    api.createRun.mockResolvedValue(runA)
+    api.cancelRun.mockImplementation(() => new Promise<void>((resolve) => { resolveCancel = resolve }))
+    api.getRun.mockImplementation(() => new Promise((resolve) => { resolveCancelledRun = resolve }))
+
+    await (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    const cancelPromise = (wrapper.vm as unknown as { cancel: () => Promise<void> }).cancel()
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    resolveCancel()
+    await nextTick()
+    resolveCancelledRun(runA)
+    await cancelPromise
+
+    expect(useRunStore().run).toBeNull()
+  })
+
+  it('does not open evidence from a previous workflow after switching', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const runA = { ...run, id: 'run-A', workflow_id: 'workflow-A', status: 'succeeded' as const }
+    let resolveEvidence!: (value: { run_id: string; evidence_id: string; title: string; content: string }) => void
+    api.createRun.mockResolvedValue(runA)
+    api.getEvidence.mockImplementation(() => new Promise((resolve) => { resolveEvidence = resolve }))
+
+    await (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    const openPromise = (wrapper.vm as unknown as { openEvidence: (id: string) => Promise<void> }).openEvidence('ev-1')
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    resolveEvidence({ run_id: 'run-A', evidence_id: 'ev-1', title: 'A evidence', content: 'A' })
+    await openPromise
+
+    expect(useRunStore().evidence).toBeNull()
+    expect(useRunStore().isEvidenceOpen).toBe(false)
   })
 })

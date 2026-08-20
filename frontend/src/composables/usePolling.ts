@@ -27,6 +27,7 @@ export function usePolling<T extends { status: RunStatus | string }>(fetcher: ()
       timer = setTimeout(() => { void tick(runGeneration) }, interval)
       return result
     } catch (reason) {
+      if (!active.value || runGeneration !== generation) return null
       error.value = reason
       stop()
       return null
