@@ -37,6 +37,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     dirty.value = false
   }
 
+  async function ensureDraft(workflowId: string) {
+    if (draft.value?.workflow_id === workflowId) return draft.value
+    await loadDraft(workflowId)
+    return draft.value
+  }
+
   function patchLocal(patch: Partial<DraftResponse>) {
     if (!draft.value) return
     draft.value = { ...draft.value, ...patch }
@@ -70,5 +76,5 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return published
   }
 
-  return { items, draft, versions, selectedNodeId, dirty, saving, error, saveLabel, loadWorkflows, create, loadDraft, patchLocal, saveDraft, publish }
+  return { items, draft, versions, selectedNodeId, dirty, saving, error, saveLabel, loadWorkflows, create, loadDraft, ensureDraft, patchLocal, saveDraft, publish }
 })

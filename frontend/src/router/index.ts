@@ -20,8 +20,16 @@ const router = createRouter({
       component: AppShell,
       children: [
         { path: '', name: 'workflows', component: () => import('@/views/WorkflowsView.vue') },
-        { path: ':id/edit', name: 'workflow-edit', component: () => import('@/views/WorkflowEditorView.vue') },
-        { path: ':id/test', name: 'workflow-test', component: () => import('@/views/WorkflowTestView.vue') },
+        {
+          path: ':id',
+          component: () => import('@/layouts/WorkflowWorkspaceLayout.vue'),
+          children: [
+            { path: '', redirect: { name: 'workflow-data' } },
+            { path: 'data', name: 'workflow-data', component: () => import('@/views/WorkflowDataView.vue') },
+            { path: 'edit', name: 'workflow-edit', component: () => import('@/views/WorkflowEditorView.vue') },
+            { path: 'test', name: 'workflow-test', component: () => import('@/views/WorkflowTestView.vue') },
+          ],
+        },
         { path: ':id/prompts', name: 'workflow-prompts', component: () => import('@/views/PromptOptimizationView.vue') },
       ],
     },
