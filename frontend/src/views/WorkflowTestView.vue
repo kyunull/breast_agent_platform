@@ -58,7 +58,7 @@ const statusLabels: Record<string, string> = { queued: '排队', running: '运�
 const statusLabel = (status: string) => statusLabels[status] ?? status
 
 onMounted(async () => {
-  try { await workflow.loadDraft(workflowId); modelProfiles.value = await listModelProfiles() as MedicalProfile[] } catch (error) { errorMessage.value = getApiError(error).message }
+  try { modelProfiles.value = await listModelProfiles() as MedicalProfile[] } catch (error) { errorMessage.value = getApiError(error).message }
 })
 
 watch(polling.latest, async (next) => { if (!next) return; runStore.setRun(next); if (isRunTerminal(next.status)) await loadTraces(next.id) })
