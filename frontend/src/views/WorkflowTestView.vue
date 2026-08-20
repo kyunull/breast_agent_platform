@@ -46,6 +46,7 @@ const running = ref(false)
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
 const currentRunId = ref('')
+let runRequestGeneration = 0
 const polling = usePolling<RunResponse>(() => getRun(currentRunId.value), 1500)
 const nodeLabels = computed(() => {
   const graph = workflow.draft?.graph as { nodes?: Array<{ id: string; name: string }> } | undefined
@@ -68,6 +69,7 @@ watch(polling.latest, async (next) => {
 })
 watch(workflowId, (next, previous) => {
   if (next === previous) return
+  runRequestGeneration += 1
   polling.stop()
   currentRunId.value = ''
   extracted.value = null
@@ -91,15 +93,20 @@ async function run() {
   running.value = true
   runStore.setTraces([])
   const requestedWorkflowId = workflowId.value
+  const requestGeneration = ++runRequestGeneration
   try {
     const created = await createRun({ workflow_id: requestedWorkflowId, version_number: selectedVersion.value, input, mode: mode.value, ...(selectedModel.value ? { model_profile_id: selectedModel.value } : {}) })
-    if (workflowId.value !== requestedWorkflowId) return
+    if (workflowId.value !== requestedWorkflowId || requestGeneration !== runRequestGeneration) return
     currentRunId.value = created.id
     runStore.setRun(created)
     if (created.output && typeof created.output === 'object' && 'extracted' in created.output) extracted.value = created.output.extracted as Record<string, unknown>
     if (isRunTerminal(created.status)) await loadTraces(created.id, requestedWorkflowId)
     else await polling.start()
-  } catch (error) { errorMessage.value = getApiError(error).message } finally { running.value = false }
+  } catch (error) {
+    if (workflowId.value === requestedWorkflowId && requestGeneration === runRequestGeneration) errorMessage.value = getApiError(error).message
+  } finally {
+    if (workflowId.value === requestedWorkflowId && requestGeneration === runRequestGeneration) running.value = false
+  }
 }
 
 async function loadTraces(runId: string, expectedWorkflowId: string) {

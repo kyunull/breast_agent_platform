@@ -205,4 +205,71 @@ describe('WorkflowTestView', () => {
     expect(useRunStore().evidence).toBeNull()
     expect(useRunStore().isEvidenceOpen).toBe(false)
   })
+
+  it('keeps the new workflow loading state when an old create request succeeds', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const runA = { ...run, id: 'run-A', workflow_id: 'workflow-A' }
+    const runB = { ...run, id: 'run-B', workflow_id: 'workflow-B' }
+    let resolveA!: (value: typeof runA) => void
+    let resolveB!: (value: typeof runB) => void
+    api.createRun
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve }))
+
+    const requestA = (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    const requestB = (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+
+    resolveA(runA)
+    await requestA
+    await nextTick()
+
+    expect((wrapper.vm as unknown as { running: boolean }).running).toBe(true)
+    expect(useRunStore().run).toBeNull()
+
+    resolveB(runB)
+    await requestB
+  })
+
+  it('does not show an old create request error in the new workflow', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const runB = { ...run, id: 'run-B', workflow_id: 'workflow-B' }
+    let rejectA!: (reason?: unknown) => void
+    let resolveB!: (value: typeof runB) => void
+    api.createRun
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectA = reject }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveB = resolve }))
+
+    const requestA = (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    const requestB = (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+
+    rejectA(new Error('workflow A failed'))
+    await requestA
+    await nextTick()
+
+    expect((wrapper.vm as unknown as { running: boolean; errorMessage: string }).running).toBe(true)
+    expect((wrapper.vm as unknown as { errorMessage: string }).errorMessage).toBe('')
+
+    resolveB(runB)
+    await requestB
+  })
 })
