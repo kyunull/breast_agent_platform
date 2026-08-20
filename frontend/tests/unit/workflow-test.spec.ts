@@ -1,5 +1,6 @@
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import ElementPlus from 'element-plus'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -49,6 +50,7 @@ describe('WorkflowTestView', () => {
   it('uses the current workflow id after the route reuses the component instance', async () => {
     const wrapper = mount(WorkflowTestView, {
       global: {
+        plugins: [ElementPlus],
         stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
       },
     })
@@ -66,6 +68,7 @@ describe('WorkflowTestView', () => {
   it('clears the previous run state when the workflow id changes', async () => {
     const wrapper = mount(WorkflowTestView, {
       global: {
+        plugins: [ElementPlus],
         stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
       },
     })
@@ -84,5 +87,32 @@ describe('WorkflowTestView', () => {
     expect(store.run).toBeNull()
     expect(store.traces).toEqual([])
     expect((wrapper.vm as unknown as { polling: { active: { value: boolean } } }).polling.active.value).toBe(false)
+  })
+
+  it('ignores an in-flight polling result from the previous workflow', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const activeRun = { ...run, status: 'running' as const }
+    let resolveRun!: (value: typeof activeRun) => void
+    api.createRun.mockResolvedValue(activeRun)
+    api.getRun.mockImplementation(() => new Promise((resolve) => { resolveRun = resolve }))
+
+    const runPromise = (wrapper.vm as unknown as { run: () => Promise<void> }).run()
+    await nextTick()
+    expect((wrapper.vm as unknown as { polling: { active: { value: boolean } } }).polling.active.value).toBe(true)
+
+    const route = useRoute() as unknown as { params: { id: string } }
+    route.params.id = 'workflow-B'
+    await nextTick()
+    resolveRun(activeRun)
+    await runPromise
+    await nextTick()
+
+    expect(useRunStore().run).toBeNull()
+    expect(useRunStore().traces).toEqual([])
   })
 })

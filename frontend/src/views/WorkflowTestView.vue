@@ -1,7 +1,7 @@
 <template>
   <section class="test-page">
     <div class="test-heading"><div><p class="page-eyebrow">运行与证据</p><h2>在线测试</h2><p>用一份脱敏样例检查资料提取、节点路径和最终方案。</p></div><div class="run-actions"><el-button :loading="running" type="primary" @click="run"><Play :size="15" />{{ running ? '运行中' : '运行样例' }}</el-button><el-button v-if="polling.active" title="取消运行" @click="cancel"><Square :size="14" />取消</el-button></div></div>
-    <div class="run-config"><div><label for="version">工作流版本</label><el-select id="version" v-model="selectedVersion"><el-option label="当前草稿 · v0" :value="0" /><el-option v-for="version in workflow.versions" :key="version.id" :label="`已发布 · v${version.version_number}`" :value="version.version_number" /></el-select></div><div><label for="model">模型配置档案</label><el-select id="model" v-model="selectedModel" clearable placeholder="使用工作流默认"><el-option v-for="profile in modelProfiles" :key="profile.id" :label="profile.name" :value="profile.id" /></el-select></div><div><label>运行方式</label><el-radio-group v-model="mode"><el-radio-button label="sync">同步</el-radio-button><el-radio-button label="async">异步</el-radio-button></el-radio-group></div></div>
+    <div class="run-config"><div><label for="version">工作流版本</label><el-select id="version" v-model="selectedVersion"><el-option label="当前草稿 · v0" :value="0" /><el-option v-for="version in workflow.versions" :key="version.id" :label="`已发布 · v${version.version_number}`" :value="version.version_number" /></el-select></div><div><label for="model">模型配置档案</label><el-select id="model" v-model="selectedModel" clearable placeholder="使用工作流默认"><el-option v-for="profile in modelProfiles" :key="profile.id" :label="profile.name" :value="profile.id" /></el-select></div><div><label>运行方式</label><el-radio-group v-model="mode"><el-radio-button value="sync">同步</el-radio-button><el-radio-button value="async">异步</el-radio-button></el-radio-group></div></div>
     <div v-if="errorMessage" class="notice notice--error"><CircleAlert :size="17" /><span>{{ errorMessage }}</span><button type="button" @click="errorMessage = ''">关闭</button></div>
     <div class="input-panel"><div class="input-panel__heading"><div><strong>脱敏测试输入</strong><span>仅用于当前运行，不写入浏览器持久存储。</span></div><button type="button" title="格式化 JSON" @click="formatInput"><WandSparkles :size="15" />格式化</button></div><el-input v-model="inputText" :rows="8" type="textarea" spellcheck="false" /></div>
 
@@ -61,7 +61,11 @@ onMounted(async () => {
   try { modelProfiles.value = await listModelProfiles() as MedicalProfile[] } catch (error) { errorMessage.value = getApiError(error).message }
 })
 
-watch(polling.latest, async (next) => { if (!next) return; runStore.setRun(next); if (isRunTerminal(next.status)) await loadTraces(next.id) })
+watch(polling.latest, async (next) => {
+  if (!next || next.workflow_id !== workflowId.value) return
+  runStore.setRun(next)
+  if (isRunTerminal(next.status)) await loadTraces(next.id, workflowId.value)
+})
 watch(workflowId, (next, previous) => {
   if (next === previous) return
   polling.stop()
@@ -91,12 +95,19 @@ async function run() {
     currentRunId.value = created.id
     runStore.setRun(created)
     if (created.output && typeof created.output === 'object' && 'extracted' in created.output) extracted.value = created.output.extracted as Record<string, unknown>
-    if (isRunTerminal(created.status)) await loadTraces(created.id)
+    if (isRunTerminal(created.status)) await loadTraces(created.id, requestedWorkflowId)
     else await polling.start()
   } catch (error) { errorMessage.value = getApiError(error).message } finally { running.value = false }
 }
 
-async function loadTraces(runId: string) { try { runStore.setTraces(await getTraces(runId)) } catch (error) { errorMessage.value = getApiError(error).message } }
+async function loadTraces(runId: string, expectedWorkflowId: string) {
+  try {
+    const traces = await getTraces(runId)
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) runStore.setTraces(traces)
+  } catch (error) {
+    if (workflowId.value === expectedWorkflowId && currentRunId.value === runId) errorMessage.value = getApiError(error).message
+  }
+}
 
 async function cancel() { polling.stop(); if (currentRunId.value) { try { await cancelRun(currentRunId.value); const next = await getRun(currentRunId.value); runStore.setRun(next) } catch (error) { errorMessage.value = getApiError(error).message } } }
 
