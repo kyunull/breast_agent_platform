@@ -67,4 +67,13 @@ describe('workflow workspace views', () => {
 
     expect(patchLocal).toHaveBeenCalledWith({ extraction })
   })
+
+  it('shows a retry notice when a profile request is rejected', async () => {
+    api.listKnowledgeProfiles.mockRejectedValueOnce(new Error('profile unavailable'))
+    const wrapper = mount(WorkflowEditorView, { global: { stubs: editorStubs } })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(wrapper.find('.notice--error').exists()).toBe(true)
+  })
 })

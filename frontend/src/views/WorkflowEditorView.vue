@@ -54,6 +54,8 @@ async function loadProfiles() {
     const [models, knowledge] = await Promise.allSettled([listModelProfiles(), listKnowledgeProfiles()])
     if (models.status === 'fulfilled') modelProfiles.value = models.value as MedicalProfile[]
     if (knowledge.status === 'fulfilled') knowledgeProfiles.value = knowledge.value as MedicalProfile[]
+    const rejected = [models, knowledge].find((result) => result.status === 'rejected')
+    if (rejected?.status === 'rejected') throw rejected.reason
   } catch (error) {
     errorMessage.value = getApiError(error).message
   }

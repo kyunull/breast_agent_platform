@@ -31,7 +31,7 @@ import EvidenceDrawer from '@/components/EvidenceDrawer.vue'
 const route = useRoute()
 const workflow = useWorkflowStore()
 const runStore = useRunStore()
-const workflowId = String(route.params.id)
+const workflowId = computed(() => String(route.params.id))
 const modelProfiles = ref<MedicalProfile[]>([])
 const selectedVersion = ref(0)
 const selectedModel = ref('')
@@ -62,6 +62,19 @@ onMounted(async () => {
 })
 
 watch(polling.latest, async (next) => { if (!next) return; runStore.setRun(next); if (isRunTerminal(next.status)) await loadTraces(next.id) })
+watch(workflowId, (next, previous) => {
+  if (next === previous) return
+  polling.stop()
+  currentRunId.value = ''
+  extracted.value = null
+  selectedVersion.value = 0
+  selectedModel.value = ''
+  errorMessage.value = ''
+  evidenceError.value = ''
+  runStore.setRun(null)
+  runStore.setTraces([])
+  runStore.closeEvidence()
+})
 
 function formatInput() { if (parsedInput.value) inputText.value = JSON.stringify(parsedInput.value, null, 2) }
 
@@ -71,8 +84,10 @@ async function run() {
   try { input = JSON.parse(inputText.value) } catch { errorMessage.value = '测试输入不是有效 JSON。'; return }
   running.value = true
   runStore.setTraces([])
+  const requestedWorkflowId = workflowId.value
   try {
-    const created = await createRun({ workflow_id: workflowId, version_number: selectedVersion.value, input, mode: mode.value, ...(selectedModel.value ? { model_profile_id: selectedModel.value } : {}) })
+    const created = await createRun({ workflow_id: requestedWorkflowId, version_number: selectedVersion.value, input, mode: mode.value, ...(selectedModel.value ? { model_profile_id: selectedModel.value } : {}) })
+    if (workflowId.value !== requestedWorkflowId) return
     currentRunId.value = created.id
     runStore.setRun(created)
     if (created.output && typeof created.output === 'object' && 'extracted' in created.output) extracted.value = created.output.extracted as Record<string, unknown>
