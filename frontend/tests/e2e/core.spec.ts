@@ -45,7 +45,7 @@ test('adds workflow nodes without a Vue render error', async ({ page }) => {
   expect(pageErrors).toEqual([])
 })
 
-test('navigates from a workflow to profile settings for an admin', async ({ page }) => {
+test('navigates from a workflow to system settings for an admin', async ({ page }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.addInitScript(() => sessionStorage.setItem('breast-agent-token', 'e2e-token'))
@@ -68,10 +68,10 @@ test('navigates from a workflow to profile settings for an admin', async ({ page
   })
 
   await page.goto('/workflows/workflow-1/edit')
-  await page.getByRole('link', { name: '配置档案管理' }).click()
+  await page.getByRole('link', { name: '系统配置' }).click()
 
   await expect(page).toHaveURL('/settings/profiles')
-  await expect(page.getByRole('heading', { name: '配置档案管理', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '系统配置', level: 2 })).toBeVisible()
   expect(pageErrors).toEqual([])
 })
 
@@ -145,5 +145,66 @@ test('supports canvas controls, clipping, and connecting workflow nodes', async 
 
   await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
   await expect(page.getByText('2 个节点 · 0 条连线')).toBeVisible()
+  expect(pageErrors).toEqual([])
+})
+
+test('workflow tabs keep the saved draft across data, editor, and test views', async ({ page }) => {
+  const pageErrors: string[] = []
+  const draft = {
+    id: 'draft-1', workflow_id: 'workflow-1', version_number: 7, status: 'draft', name: '多页签草稿', description: null,
+    graph: { nodes: [], edges: [] }, extraction: { groups: [] }, metadata: {}, template_refs: [], definition_sha256: null,
+  }
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => sessionStorage.setItem('breast-agent-token', 'e2e-token'))
+  await page.route('http://127.0.0.1:8000/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === '/api/v1/me') {
+      await route.fulfill({ json: { id: 'admin-1', username: 'admin', display_name: '管理员', role: 'admin_developer', is_active: true } })
+      return
+    }
+    if (path === '/api/v1/workflows/workflow-1/draft' && request.method() === 'GET') {
+      await route.fulfill({ json: draft })
+      return
+    }
+    if (path === '/api/v1/workflows/workflow-1/draft' && request.method() === 'PATCH') {
+      Object.assign(draft, request.postDataJSON())
+      await route.fulfill({ json: draft })
+      return
+    }
+    if (path === '/api/v1/workflows/workflow-1/versions' || path === '/api/v1/model-profiles' || path === '/api/v1/knowledge-profiles') {
+      await route.fulfill({ json: [] })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/workflows/workflow-1/edit')
+  await expect(page.getByText('草稿 v7')).toBeVisible()
+  await expect(page.getByRole('link', { name: '流程编辑' })).toHaveClass(/is-active/)
+
+  await page.getByRole('link', { name: '数据准备' }).click()
+  await expect(page).toHaveURL('/workflows/workflow-1/data')
+  await expect(page.getByRole('link', { name: '数据准备' })).toHaveClass(/is-active/)
+  const groupLabel = page.getByPlaceholder('业务分组名称')
+  await groupLabel.fill('病理资料')
+  await groupLabel.press('Tab')
+  await expect(page.getByRole('button', { name: '未保存修改' })).toBeVisible()
+
+  const saved = page.waitForRequest((request) => request.method() === 'PATCH' && new URL(request.url()).pathname === '/api/v1/workflows/workflow-1/draft')
+  await page.getByRole('button', { name: '未保存修改' }).click()
+  await saved
+  await expect(page.getByRole('button', { name: '已保存' })).toBeVisible()
+
+  await page.getByRole('link', { name: '流程编辑' }).click()
+  await expect(page).toHaveURL('/workflows/workflow-1/edit')
+  await expect(page.getByRole('link', { name: '流程编辑' })).toHaveClass(/is-active/)
+  await page.getByRole('link', { name: '在线测试' }).click()
+  await expect(page).toHaveURL('/workflows/workflow-1/test')
+  await expect(page.getByRole('link', { name: '在线测试' })).toHaveClass(/is-active/)
+
+  await page.getByRole('link', { name: '数据准备' }).click()
+  await expect(page.getByPlaceholder('业务分组名称')).toHaveValue('病理资料')
+  expect(draft.extraction).toEqual(expect.objectContaining({ groups: [expect.objectContaining({ label: '病理资料' })] }))
   expect(pageErrors).toEqual([])
 })
