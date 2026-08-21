@@ -1,6 +1,6 @@
 import { buildFieldCatalog } from '@/composables/useWorkflowFields'
 import { BREAST_CANCER_INPUT_FIELDS, BREAST_CANCER_INPUT_SECTIONS, findBreastCancerInputField } from '@/data/breastCancerInputSchema'
-import type { GraphNode } from '@/types/graph'
+import type { GraphEdge, GraphNode } from '@/types/graph'
 
 const node = (id: string, config: Record<string, unknown>): GraphNode => ({
   id,
@@ -63,6 +63,25 @@ describe('workflow field catalog', () => {
       expect.objectContaining({ value: 'rule-1.risk', label: 'risk', source: '节点 · rule-1' }),
     ]))
     expect(catalog.some((item) => item.value === 'current.own')).toBe(false)
+  })
+
+  it('only suggests outputs from transitive upstream nodes when graph edges are provided', () => {
+    const nodes = [
+      node('input-1', { output_fields: [{ name: 'age', path: 'age' }] }),
+      node('rule-1', { output_fields: [{ name: 'risk', path: 'risk' }] }),
+      node('current', { output_fields: [{ name: 'decision', path: 'decision' }] }),
+      node('downstream', { output_fields: [{ name: 'report', path: 'report' }] }),
+      node('detached', { output_fields: [{ name: 'note', path: 'note' }] }),
+    ]
+    const edges: GraphEdge[] = [
+      { id: 'e1', source: 'input-1', target: 'rule-1' },
+      { id: 'e2', source: 'rule-1', target: 'current' },
+      { id: 'e3', source: 'current', target: 'downstream' },
+    ]
+
+    const catalog = buildFieldCatalog([], nodes, 'current', edges)
+
+    expect(catalog.map((item) => item.value)).toEqual(['input-1.age', 'rule-1.risk'])
   })
 
   it('uses the mapped Chinese label and source path for patient fields in node selectors', () => {

@@ -1,4 +1,4 @@
-import type { GraphNode } from '@/types/graph'
+import type { GraphEdge, GraphNode } from '@/types/graph'
 import { breastCancerFieldLabel, breastCancerFieldTypeLabel } from '@/data/breastCancerInputSchema'
 
 export interface WorkflowFieldOption {
@@ -56,6 +56,7 @@ export function buildFieldCatalog(
   extractionGroups: ExtractionGroupLike[] = [],
   nodes: GraphNode[] = [],
   currentNodeId?: string,
+  edges?: GraphEdge[],
 ): WorkflowFieldOption[] {
   const options: WorkflowFieldOption[] = []
   const seen = new Set<string>()
@@ -79,8 +80,28 @@ export function buildFieldCatalog(
     }
   }
 
+  const upstreamNodeIds = new Set<string>()
+  if (currentNodeId && edges) {
+    const sourcesByTarget = new Map<string, string[]>()
+    for (const edge of edges) {
+      const sources = sourcesByTarget.get(edge.target) ?? []
+      sources.push(edge.source)
+      sourcesByTarget.set(edge.target, sources)
+    }
+    const pending = [currentNodeId]
+    while (pending.length) {
+      const target = pending.pop() as string
+      for (const source of sourcesByTarget.get(target) ?? []) {
+        if (source === currentNodeId || upstreamNodeIds.has(source)) continue
+        upstreamNodeIds.add(source)
+        pending.push(source)
+      }
+    }
+  }
+
   for (const node of nodes) {
     if (node.id === currentNodeId) continue
+    if (currentNodeId && edges && !upstreamNodeIds.has(node.id)) continue
     for (const field of outputFields(node)) {
       addOption(options, seen, {
         value: `${node.id}.${field.name}`,

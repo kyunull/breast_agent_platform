@@ -44,7 +44,7 @@ const draft = computed(() => store.draft)
 const selectedNode = computed(() => graph.value.nodes.find((node) => node.id === selectedNodeId.value) ?? null)
 const extractionForms = computed(() => extractionConfigToForms(draft.value?.extraction))
 const extractionGroups = computed(() => serializeExtractionConfig(extractionForms.value).groups)
-const fieldOptions = computed(() => buildFieldCatalog(extractionForms.value, graph.value.nodes, selectedNodeId.value ?? undefined))
+const fieldOptions = computed(() => buildFieldCatalog(extractionForms.value, graph.value.nodes, selectedNodeId.value ?? undefined, graph.value.edges))
 
 watch(() => store.draft?.graph, (value) => {
   graph.value = normalizeGraph(value)
