@@ -15,7 +15,7 @@ describe('condition config helpers', () => {
     expect(state.conditions).toEqual([{ left: 'facts.stage', operator: 'eq', right: 'IV' }])
     expect(state.truePort).toBe('yes')
     expect(state.falsePort).toBe('no')
-    expect(state.trueLabel).toBe('命中')
+    expect(state.trueLabel).toBe('满足')
     expect(state.falseLabel).toBe('不满足')
   })
 
@@ -45,8 +45,8 @@ describe('condition config helpers', () => {
       ],
       true_port: 'satisfied',
       false_port: 'unsatisfied',
-      true_label: '进入治疗',
-      false_label: '补充资料',
+      true_label: '满足',
+      false_label: '不满足',
       missing_strategy: 'false',
     })
   })

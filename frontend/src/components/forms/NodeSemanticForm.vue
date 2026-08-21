@@ -31,10 +31,7 @@
         </div>
         <button type="button" class="condition-add" @click="addCondition"><Plus :size="15" aria-hidden="true" /><span>新增条件</span></button>
         <el-form-item label="缺失值策略"><el-select :model-value="conditionState.missingStrategy" @update:model-value="updateCondition({ missingStrategy: String($event) })"><el-option label="按不满足处理" value="false" /><el-option label="标记待补充" value="needs_review" /><el-option label="终止运行" value="error" /></el-select></el-form-item>
-        <div class="branch-labels">
-          <el-form-item label="满足出口名称"><el-input :model-value="conditionState.trueLabel" @update:model-value="updateCondition({ trueLabel: String($event) })" /></el-form-item>
-          <el-form-item label="不满足出口名称"><el-input :model-value="conditionState.falseLabel" @update:model-value="updateCondition({ falseLabel: String($event) })" /></el-form-item>
-        </div>
+        <div class="branch-labels" aria-label="条件出口"><span>满足</span><span>不满足</span></div>
       </el-form>
     </template>
 

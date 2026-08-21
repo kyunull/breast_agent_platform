@@ -55,8 +55,8 @@ export function normalizeConditionConfig(config: Record<string, unknown>): Condi
     conditions: conditions.length ? conditions : [{ left: '', operator: 'not_empty', right: null }],
     truePort,
     falsePort,
-    trueLabel: stringValue(config.true_label ?? config.branch_label, '满足'),
-    falseLabel: stringValue(config.false_label, '不满足'),
+    trueLabel: '满足',
+    falseLabel: '不满足',
     missingStrategy: stringValue(config.missing_strategy, 'false'),
   }
 }
@@ -72,8 +72,8 @@ export function serializeConditionConfig(state: ConditionEditorState, previous: 
     })),
     true_port: state.truePort || 'satisfied',
     false_port: state.falsePort || 'unsatisfied',
-    true_label: state.trueLabel.trim() || '满足',
-    false_label: state.falseLabel.trim() || '不满足',
+    true_label: '满足',
+    false_label: '不满足',
     missing_strategy: state.missingStrategy || 'false',
   }
 }

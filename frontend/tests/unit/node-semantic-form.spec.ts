@@ -69,6 +69,7 @@ describe('NodeSemanticForm', () => {
     }))
 
     expect(wrapper.text()).not.toContain('无需比较值')
+    expect(wrapper.text()).not.toContain('出口名称')
     expect(wrapper.findAll('.condition-rule__title').map((item) => item.text())).toEqual(['条件 01', '条件 02'])
     expect(wrapper.findAll('.condition-remove')).toHaveLength(2)
   })
