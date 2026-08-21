@@ -10,7 +10,7 @@ from app.users.models import User
 
 @pytest.fixture
 def client(tmp_path) -> TestClient:
-    app = create_app(Settings(database_url=f"sqlite:///{tmp_path / 'test.db'}"))
+    app = create_app(Settings(database_url=f"sqlite:///{tmp_path / 'test.db'}", credential_key_file=str(tmp_path / "credential.key")))
     Base.metadata.create_all(app.state.engine)
     with TestClient(app) as test_client:
         yield test_client

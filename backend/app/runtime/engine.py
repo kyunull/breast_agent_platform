@@ -183,6 +183,9 @@ class WorkflowEngine:
             if not repeat:
                 processed.add(node_id)
             selected_ports = result.selected_ports or ["out"]
+            declared_ports = list(node.output_ports)
+            if selected_ports == ["out"] and declared_ports and "out" not in declared_ports:
+                selected_ports = declared_ports
             for edge in outgoing.get(node_id, []):
                 if edge.kind == "reassessment":
                     if not self._selected(edge, selected_ports):

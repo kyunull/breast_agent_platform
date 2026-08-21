@@ -1,11 +1,12 @@
 import type { Edge, Node } from '@vue-flow/core'
 import { toRaw } from 'vue'
 
-import type { GraphEdge, GraphNode, GraphNodeType, WorkflowGraph } from '@/types/graph'
+import type { GraphEdge, GraphNode, GraphNodeType, GraphPort, WorkflowGraph } from '@/types/graph'
 
 export interface FlowNodeData {
   graphNode: GraphNode
   label: string
+  selected?: boolean
 }
 
 export interface NodeClipboardPayload {
@@ -14,13 +15,45 @@ export interface NodeClipboardPayload {
   node: GraphNode
 }
 
-export function toFlowNode(node: GraphNode): Node<FlowNodeData> {
+interface PersistedGraphNode extends Omit<GraphNode, 'input_ports' | 'output_ports'> {
+  input_ports: string[]
+  output_ports: string[]
+}
+
+interface PersistedGraphEdge {
+  id: string
+  source: string
+  target: string
+  source_port: string
+  target_port: string
+  kind: 'normal' | 'branch' | 'reassessment'
+  branch_label?: string
+  loop_policy?: { max_iterations: number; exit_condition: string }
+}
+
+function cloneGraphValue<T>(value: T): T {
+  const raw = toRaw(value)
+  if (Array.isArray(raw)) return raw.map((item) => cloneGraphValue(item)) as T
+  if (raw && typeof raw === 'object') {
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).map(([key, item]) => [key, cloneGraphValue(item)]),
+    ) as T
+  }
+  return raw
+}
+
+export interface PersistedWorkflowGraph {
+  nodes: PersistedGraphNode[]
+  edges: PersistedGraphEdge[]
+}
+
+export function toFlowNode(node: GraphNode, selected = false): Node<FlowNodeData> {
   const rawNode = toRaw(node)
   return {
     id: rawNode.id,
     type: 'clinical-node',
     position: { x: rawNode.position.x, y: rawNode.position.y },
-    data: { graphNode: structuredClone(rawNode), label: rawNode.name },
+    data: { graphNode: cloneGraphValue(rawNode), label: rawNode.name, selected },
   }
 }
 
@@ -29,39 +62,100 @@ export function toGraphNode(node: Node<FlowNodeData>): GraphNode {
   const rawNode = toRaw(node)
   const rawData = toRaw(node.data)
   return {
-    ...structuredClone(toRaw(rawData.graphNode)),
+    ...cloneGraphValue(rawData.graphNode),
     id: rawNode.id,
     position: { x: rawNode.position.x, y: rawNode.position.y },
   }
 }
 
 export function toFlowEdge(edge: GraphEdge): Edge {
+  const sourcePort = edge.source_port ?? edge.source_handle ?? null
+  const targetPort = edge.target_port ?? edge.target_handle ?? null
+  const label = edge.branch_label ?? edge.label ?? undefined
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.source_handle ?? null,
-    targetHandle: edge.target_handle ?? null,
-    label: edge.label ?? undefined,
-    data: { metadata: edge.metadata ?? {} },
+    sourceHandle: sourcePort,
+    targetHandle: targetPort,
+    label,
+    data: { metadata: edge.metadata ?? {}, kind: edge.kind ?? (label ? 'branch' : 'normal'), loopPolicy: edge.loop_policy ?? undefined },
     type: 'smoothstep',
   }
 }
 
 export function toGraphEdge(edge: Edge): GraphEdge {
+  const metadata = (edge.data?.metadata as Record<string, unknown> | undefined) ?? {}
+  const kind = edge.data?.kind === 'reassessment' || edge.data?.kind === 'branch' ? edge.data.kind : (edge.label ? 'branch' : 'normal')
+  const label = typeof edge.label === 'string' ? edge.label : null
+  const loopPolicy = edge.data?.loopPolicy as GraphEdge['loop_policy'] | undefined
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    source_handle: edge.sourceHandle,
-    target_handle: edge.targetHandle,
-    label: typeof edge.label === 'string' ? edge.label : null,
-    metadata: (edge.data?.metadata as Record<string, unknown> | undefined) ?? {},
+    source_port: edge.sourceHandle ?? 'out',
+    target_port: edge.targetHandle ?? 'in',
+    kind,
+    ...(label ? { branch_label: label } : {}),
+    ...(loopPolicy ? { loop_policy: loopPolicy } : {}),
+    metadata,
   }
 }
 
 export function toWorkflowGraph(nodes: Node<FlowNodeData>[], edges: Edge[]): WorkflowGraph {
   return { nodes: nodes.map(toGraphNode), edges: edges.map(toGraphEdge) }
+}
+
+export function backfillConditionEdgeLabels(graph: WorkflowGraph): WorkflowGraph {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]))
+  return {
+    ...graph,
+    edges: graph.edges.map((edge) => {
+      if (edge.branch_label || edge.label) return edge
+      const node = nodes.get(edge.source)
+      if (node?.type !== 'condition') return edge
+      const sourcePort = edge.source_port ?? edge.source_handle
+      const config = node.config
+      const label = sourcePort === String(config.true_port ?? 'satisfied')
+        ? String(config.true_label ?? '满足')
+        : sourcePort === String(config.false_port ?? 'unsatisfied')
+          ? String(config.false_label ?? '不满足')
+          : (() => {
+              const port = node.output_ports.find((item) => portId(item) === sourcePort)
+              return typeof port === 'string' ? port : port?.label
+            })()
+      return label ? { ...edge, kind: 'branch', branch_label: label, label } : edge
+    }),
+  }
+}
+
+function portId(port: GraphPort | string): string {
+  return typeof port === 'string' ? port : port.id
+}
+
+export function toPersistedGraph(graph: WorkflowGraph): PersistedWorkflowGraph {
+  return {
+    nodes: graph.nodes.map((node) => ({
+      ...cloneGraphValue(node),
+      input_ports: (node.input_ports ?? []).map(portId),
+      output_ports: (node.output_ports ?? []).map(portId),
+    })),
+    edges: graph.edges.map((edge) => {
+      const sourcePort = edge.source_port ?? edge.source_handle ?? 'out'
+      const targetPort = edge.target_port ?? edge.target_handle ?? 'in'
+      const label = edge.branch_label ?? edge.label
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        source_port: sourcePort,
+        target_port: targetPort,
+        kind: edge.kind ?? (label ? 'branch' : 'normal'),
+        ...(label ? { branch_label: label } : {}),
+        ...(edge.loop_policy ? { loop_policy: cloneGraphValue(edge.loop_policy) } : {}),
+      }
+    }),
+  }
 }
 
 const sensitiveKey = /(?:api[_-]?key|secret|token|authorization|password|credential|patient(?:[_-]?(?:id|name|data))?|mrn|medical[_-]?record|身份证|患者)/i
@@ -85,7 +179,7 @@ export function sanitizeNodeClipboard(node: GraphNode): NodeClipboardPayload {
   return {
     version: 1,
     kind: 'breast-agent-workflow-node',
-    node: sanitizeValue(structuredClone(node)) as GraphNode,
+    node: sanitizeValue(cloneGraphValue(node)) as GraphNode,
   }
 }
 
@@ -131,9 +225,13 @@ export function createGraphNode(type: GraphNodeType, index: number): GraphNode {
     type,
     name: labels[type],
     position: { x: 180 + (index % 3) * 300, y: 120 + Math.floor(index / 3) * 180 },
-    input_ports: [{ id: 'input', label: '输入' }],
-    output_ports: [{ id: 'output', label: '输出' }],
-    config: {},
+    input_ports: type === 'input' ? [] : [{ id: 'in', label: '输入' }],
+    output_ports: type === 'condition'
+      ? [{ id: 'satisfied', label: '满足' }, { id: 'unsatisfied', label: '不满足' }]
+      : type === 'output' ? [] : [{ id: 'out', label: '输出' }],
+    config: type === 'condition'
+      ? { operator: 'and', operands: [{ left: '', operator: 'not_empty', right: null }], true_port: 'satisfied', false_port: 'unsatisfied', true_label: '满足', false_label: '不满足', missing_strategy: 'false' }
+      : {},
     metadata: {},
   }
 }

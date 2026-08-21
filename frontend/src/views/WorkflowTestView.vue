@@ -3,7 +3,7 @@
     <div class="test-heading"><div><p class="page-eyebrow">运行与证据</p><h2>在线测试</h2><p>用一份脱敏样例检查资料提取、节点路径和最终方案。</p></div><div class="run-actions"><el-button :loading="running" type="primary" @click="run"><Play :size="15" />{{ running ? '运行中' : '运行样例' }}</el-button><el-button v-if="polling.active" title="取消运行" @click="cancel"><Square :size="14" />取消</el-button></div></div>
     <div class="run-config"><div><label for="version">工作流版本</label><el-select id="version" v-model="selectedVersion"><el-option label="当前草稿 · v0" :value="0" /><el-option v-for="version in workflow.versions" :key="version.id" :label="`已发布 · v${version.version_number}`" :value="version.version_number" /></el-select></div><div><label for="model">模型配置档案</label><el-select id="model" v-model="selectedModel" clearable placeholder="使用工作流默认"><el-option v-for="profile in modelProfiles" :key="profile.id" :label="profile.name" :value="profile.id" /></el-select></div><div><label>运行方式</label><el-radio-group v-model="mode"><el-radio-button value="sync">同步</el-radio-button><el-radio-button value="async">异步</el-radio-button></el-radio-group></div></div>
     <div v-if="errorMessage" class="notice notice--error"><CircleAlert :size="17" /><span>{{ errorMessage }}</span><button type="button" @click="errorMessage = ''">关闭</button></div>
-    <div class="input-panel"><div class="input-panel__heading"><div><strong>脱敏测试输入</strong><span>仅用于当前运行，不写入浏览器持久存储。</span></div><button type="button" title="格式化 JSON" @click="formatInput"><WandSparkles :size="15" />格式化</button></div><el-input v-model="inputText" :rows="8" type="textarea" spellcheck="false" /></div>
+    <div class="input-panel"><div class="input-panel__heading"><div class="input-panel__title"><strong>脱敏测试输入</strong><span>仅用于当前运行，不写入浏览器持久存储。</span><span v-if="inputFileName" class="input-file-name" title="已载入文件">已载入：{{ inputFileName }}</span></div><div class="input-panel__tools"><button type="button" title="上传完整 JSON" @click="inputFileInput?.click()"><Upload :size="15" />上传完整 JSON</button><button type="button" title="格式化 JSON" @click="formatInput"><WandSparkles :size="15" />格式化</button></div><input ref="inputFileInput" class="file-input" type="file" accept=".json,application/json" @change="onInputFileChange" /></div><p v-if="inputFileError" class="input-file-error">{{ inputFileError }}</p><el-input v-model="inputText" :rows="8" type="textarea" spellcheck="false" /></div>
 
     <div class="compare-grid"><JsonComparePane title="原始 JSON" subtitle="测试输入" :value="parsedInput" /><JsonComparePane title="提取结果" subtitle="提取预览" :value="extracted" /><section class="output-pane"><div class="output-pane__heading"><strong>最终输出</strong><span v-if="runStore.run">{{ statusLabel(runStore.run.status) }}</span></div><pre>{{ outputText }}</pre><div v-if="evidenceRefs.length" class="output-evidence"><span>引用证据</span><button v-for="ref in evidenceRefs" :key="ref" type="button" @click="openEvidence(ref)"><BookOpen :size="12" />{{ ref }}</button></div></section></div>
     <TraceTimeline :traces="runStore.traces" :node-labels="nodeLabels" @evidence="openEvidence" />
@@ -14,12 +14,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { BookOpen, CircleAlert, Play, Square, WandSparkles } from 'lucide-vue-next'
+import { BookOpen, CircleAlert, Play, Square, Upload, WandSparkles } from 'lucide-vue-next'
 
 import { getApiError } from '@/api/client'
 import { listModelProfiles } from '@/api/profiles'
 import { cancelRun, createRun, getEvidence, getRun, getTraces } from '@/api/runs'
 import { usePolling } from '@/composables/usePolling'
+import { readJsonDocument } from '@/composables/useJsonFileUpload'
 import { collectEvidenceRefs, formatRunError, isRunTerminal } from '@/composables/useRunUtils'
 import { useRunStore } from '@/stores/run'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -40,6 +41,9 @@ const inputText = ref(`{
   "pathology": { "her2": { "score": 3 } },
   "treatment_history": []
 }`)
+const inputFileInput = ref<HTMLInputElement>()
+const inputFileName = ref('')
+const inputFileError = ref('')
 const extracted = ref<Record<string, unknown> | null>(null)
 const errorMessage = ref('')
 const running = ref(false)
@@ -85,6 +89,23 @@ watch(workflowId, (next, previous) => {
 })
 
 function formatInput() { if (parsedInput.value) inputText.value = JSON.stringify(parsedInput.value, null, 2) }
+
+async function onInputFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const result = await readJsonDocument(file)
+    inputText.value = result.text
+    inputFileName.value = result.name
+    inputFileError.value = ''
+    errorMessage.value = ''
+  } catch (error) {
+    inputFileName.value = ''
+    inputFileError.value = error instanceof Error ? error.message : '文件读取失败。'
+  }
+}
 
 async function run() {
   errorMessage.value = ''
@@ -157,6 +178,11 @@ async function openEvidence(evidenceId: string) {
 }
 .run-config :deep(.el-radio-group) { display: flex; }
 .run-config :deep(.el-radio-button__inner) { padding: 8px 12px; }
+.file-input { display: none; }
+.input-panel__title { min-width: 0; }
+.input-panel__tools { display: flex; flex: 0 0 auto; gap: 10px; align-items: center; }
+.input-file-name { max-width: min(48vw, 520px); overflow: hidden; color: var(--teal-700) !important; text-overflow: ellipsis; white-space: nowrap; }
+.input-file-error { margin: 0; padding: 8px 13px; color: var(--red-700); font-size: 11px; line-height: 1.45; background: #fff0ef; border-bottom: 1px solid #e7bbb7; }
 @media (max-width: 620px) {
   .test-heading { display: block; }
   .test-heading h2 { font-size: 24px; }
@@ -164,7 +190,10 @@ async function openEvidence(evidenceId: string) {
   .run-actions :deep(.el-button) { flex: 1; }
   .run-config { grid-template-columns: 1fr; gap: 11px; padding: 12px; }
   .run-config > :last-child { grid-column: auto; }
-  .input-panel__heading { align-items: flex-start; }
+  .input-panel__heading { flex-wrap: wrap; align-items: flex-start; }
+  .input-panel__title { width: 100%; }
+  .input-panel__tools { width: 100%; justify-content: flex-end; }
+  .input-file-name { max-width: 100%; }
   .compare-grid { gap: 10px; }
 }
 </style>

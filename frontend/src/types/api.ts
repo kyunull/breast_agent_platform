@@ -100,6 +100,7 @@ export interface MedicalProfile {
 export interface AdminProfile extends MedicalProfile {
   technical_config: Record<string, unknown>
   is_active: boolean
+  api_key_configured?: boolean
 }
 
 export type Profile = MedicalProfile | AdminProfile
@@ -111,6 +112,7 @@ export interface ProfileCreatePayload {
   is_active?: boolean
   medical_options: Record<string, unknown>
   technical_config: Record<string, unknown>
+  api_key?: string
 }
 
 export interface ModelProfileConnectionTestResponse {

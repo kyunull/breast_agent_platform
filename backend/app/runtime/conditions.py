@@ -80,11 +80,23 @@ def _evaluate(config: Any, context: ExecutionContext) -> str:
         if not exists:
             return "unknown"
         return "true" if left is None or left == "" or left == [] or left == {} else "false"
+    if operator == "not_empty":
+        if not exists:
+            return "unknown"
+        return "false" if left is None or left == "" or left == [] or left == {} else "true"
     if not exists:
         return "unknown"
     right = resolve_value(config.get("right"), context)
     if right is MISSING:
         return "unknown"
+    if isinstance(right, str):
+        if isinstance(left, bool) and right.lower() in {"true", "false"}:
+            right = right.lower() == "true"
+        elif isinstance(left, (int, float)) and not isinstance(left, bool):
+            try:
+                right = float(right)
+            except ValueError:
+                pass
     try:
         if operator in {"eq", "=="}:
             outcome = left == right
@@ -109,10 +121,18 @@ def _evaluate(config: Any, context: ExecutionContext) -> str:
 
 def evaluate_condition(config: dict[str, Any], context: ExecutionContext) -> ConditionResult:
     status = _evaluate(config, context)
+    if status == "unknown":
+        strategy = str(config.get("missing_strategy", "unknown")).lower()
+        if strategy == "false":
+            status = "false"
+        elif strategy == "needs_review":
+            status = "needs_review"
+        elif strategy == "error":
+            raise ValueError("condition value is unknown")
     value = {"true": True, "false": False}.get(status)
     if status == "true":
         port = str(config.get("true_port", config.get("success_port", "true")))
-    elif status == "false":
+    elif status in {"false", "needs_review"}:
         port = str(config.get("false_port", config.get("failure_port", "false")))
     else:
         port = str(config.get("unknown_port", "unknown"))

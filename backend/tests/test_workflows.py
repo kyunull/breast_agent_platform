@@ -209,6 +209,59 @@ def test_medical_user_can_use_clinical_names_ending_in_governed_terms_in_schema(
     assert response.json()["graph"]["nodes"][0]["config"]["inputSchema"] == input_schema
 
 
+def test_medical_user_can_save_condition_and_field_editor_configs(client, medical_token):
+    headers = {"Authorization": f"Bearer {medical_token}"}
+    workflow_id = client.post(
+        "/api/v1/workflows",
+        headers=headers,
+        json={"name": "Medical node editor workflow"},
+    ).json()["id"]
+    field_contract = [{"key": "age", "name": "age", "path": "facts.age", "type": "integer", "required": True}]
+    graph = {
+        "nodes": [
+            {
+                "id": "condition", "type": "condition", "name": "年龄判断",
+                "input_ports": ["input"], "output_ports": ["satisfied", "unsatisfied"],
+                "config": {
+                    "operator": "and",
+                    "operands": [{"left": "facts.age", "operator": "gte", "right": "50"}],
+                    "true_port": "satisfied", "false_port": "unsatisfied",
+                    "true_label": "满足", "false_label": "不满足", "missing_strategy": "false",
+                },
+            },
+            {
+                "id": "input", "type": "input", "name": "输入",
+                "input_ports": [], "output_ports": ["output"],
+                "config": {"group_id": "facts", "input_fields": field_contract, "output_fields": field_contract},
+            },
+            {
+                "id": "rule", "type": "python_rule", "name": "规则",
+                "input_ports": ["input"], "output_ports": ["output"],
+                "config": {"input_fields": field_contract, "output_fields": field_contract},
+            },
+            {
+                "id": "llm", "type": "llm", "name": "判断",
+                "input_ports": ["input"], "output_ports": ["output"],
+                "config": {"input_fields": field_contract, "output_fields": field_contract},
+            },
+            {
+                "id": "output", "type": "output", "name": "输出",
+                "input_ports": ["input"], "output_ports": [],
+                "config": {"input_fields": field_contract, "output_fields": field_contract},
+            },
+        ],
+        "edges": [],
+    }
+
+    response = client.patch(
+        f"/api/v1/workflows/{workflow_id}/draft",
+        headers=headers,
+        json={"graph": graph},
+    )
+
+    assert response.status_code == 200, response.text
+
+
 def test_admin_can_store_technical_parameters_in_workflow(
     client,
     admin_token,

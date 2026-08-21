@@ -30,8 +30,13 @@ export interface GraphEdge {
   id: string
   source: string
   target: string
+  source_port?: string | null
+  target_port?: string | null
   source_handle?: string | null
   target_handle?: string | null
+  kind?: 'normal' | 'branch' | 'reassessment'
+  branch_label?: string | null
+  loop_policy?: { max_iterations: number; exit_condition: string } | null
   label?: string | null
   metadata?: Record<string, unknown>
 }

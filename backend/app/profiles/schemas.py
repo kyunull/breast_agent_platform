@@ -58,8 +58,8 @@ def _validate_technical_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("timeout must be positive")
 
     for key, value in normalized_config.items():
-        if key in _SECRET_KEYS:
-            raise ValueError("store secrets as environment references")
+        if key in _SECRET_KEYS or key == "api_key_encrypted":
+            raise ValueError("secrets are not allowed in technical_config")
         if key.endswith("_ref") and (
             not isinstance(value, str) or not _SECRET_REF_PATTERN.fullmatch(value)
         ):
@@ -79,6 +79,7 @@ class ProfileCreate(BaseModel):
     medical_options: dict[str, Any] = Field(default_factory=dict)
     exposed_to_medical: bool = False
     is_active: bool = True
+    api_key: str | None = None
 
     @model_validator(mode="after")
     def validate_config(self) -> "ProfileCreate":
@@ -103,6 +104,7 @@ class ProfilePatch(BaseModel):
     medical_options: dict[str, Any] | None = None
     exposed_to_medical: bool | None = None
     is_active: bool | None = None
+    api_key: str | None = None
 
     @model_validator(mode="after")
     def validate_config(self) -> "ProfilePatch":
@@ -124,6 +126,8 @@ class ProfilePatch(BaseModel):
 
 class ModelProfileConnectionTest(BaseModel):
     technical_config: dict[str, Any]
+    api_key: str | None = None
+    profile_id: str | None = None
 
     @model_validator(mode="after")
     def validate_config(self) -> "ModelProfileConnectionTest":
@@ -159,3 +163,4 @@ class MedicalProfileRead(BaseModel):
 class AdminProfileRead(MedicalProfileRead):
     technical_config: dict[str, Any]
     is_active: bool
+    api_key_configured: bool = False

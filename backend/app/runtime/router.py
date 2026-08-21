@@ -129,10 +129,10 @@ def _node_profile_ref(
     return None
 
 
-def _default_providers(model_profile: Any | None, knowledge_profile: Any | None) -> dict[str, Any]:
+def _default_providers(model_profile: Any | None, knowledge_profile: Any | None, credential_manager: Any | None = None) -> dict[str, Any]:
     providers: dict[str, Any] = {}
     if model_profile is not None:
-        providers["model"] = OpenAICompatibleGateway()
+        providers["model"] = OpenAICompatibleGateway(credential_manager=credential_manager)
         providers["model_profile"] = model_profile
     if knowledge_profile is not None:
         config = knowledge_profile.technical_config_json
@@ -164,7 +164,7 @@ def _provider_bundle(
             knowledge_profile=knowledge_profile,
         )
         if callable(factory)
-        else _default_providers(model_profile, knowledge_profile)
+        else _default_providers(model_profile, knowledge_profile, app.state.credential_manager)
     )
     return dict(result or {})
 

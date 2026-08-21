@@ -5,9 +5,22 @@ from typing import Any
 
 import httpx
 
+from app.core.credentials import CredentialError, CredentialManager
+
 
 class GatewayError(RuntimeError):
-    """Provider error safe to persist in a node error summary."""
+    """Provider error with a separate user-facing message."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "model_connection_failed",
+        safe_message: str = "模型连接测试失败，请检查配置后重试",
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.safe_message = safe_message
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +39,6 @@ def resolve_secret_reference(reference: Any, *, required: bool = True) -> str | 
         return None
     if not isinstance(reference, str) or not reference.endswith("_REF"):
         raise GatewayError("API key must use an uppercase *_REF environment reference")
-
     configured = os.getenv(reference)
     if configured:
         indirect = os.getenv(configured) if configured.isidentifier() else None
@@ -57,9 +69,64 @@ def _message_content(value: Any) -> str:
     raise GatewayError("Chat Completions message content must be text")
 
 
+def _chat_completions_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized
+    return f"{normalized}/chat/completions"
+
+
+def _provider_request_error(error: Exception) -> GatewayError:
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+        if status_code in (401, 403):
+            return GatewayError(
+                f"model provider returned HTTP {status_code}",
+                code="model_authentication_failed",
+                safe_message="API Key 无效或无权访问该模型。",
+            )
+        if status_code == 404:
+            return GatewayError(
+                "model provider returned HTTP 404",
+                code="model_endpoint_not_found",
+                safe_message="模型接口地址不正确。",
+            )
+        if status_code == 429:
+            return GatewayError(
+                "model provider returned HTTP 429",
+                code="model_rate_limited",
+                safe_message="模型服务请求过于频繁，请稍后重试。",
+            )
+        if status_code >= 500:
+            return GatewayError(
+                f"model provider returned HTTP {status_code}",
+                code="model_service_unavailable",
+                safe_message="模型服务暂时不可用。",
+            )
+        return GatewayError(
+            f"model provider returned HTTP {status_code}",
+            code="model_request_rejected",
+            safe_message=f"模型服务拒绝了请求（HTTP {status_code}）。",
+        )
+    if isinstance(error, httpx.TimeoutException):
+        return GatewayError(
+            "model provider request timed out",
+            code="model_connection_timeout",
+            safe_message="连接模型服务超时，请检查地址或稍后重试。",
+        )
+    if isinstance(error, httpx.RequestError):
+        return GatewayError(
+            "model provider is unreachable",
+            code="model_endpoint_unreachable",
+            safe_message="无法连接模型服务，请检查服务地址和网络。",
+        )
+    return GatewayError("model provider request failed")
+
+
 class OpenAICompatibleGateway:
-    def __init__(self, *, client: httpx.Client | None = None) -> None:
+    def __init__(self, *, client: httpx.Client | None = None, credential_manager: CredentialManager | None = None) -> None:
         self._client = client or httpx.Client()
+        self._credential_manager = credential_manager
 
     def complete(
         self,
@@ -75,13 +142,25 @@ class OpenAICompatibleGateway:
         if not model:
             raise GatewayError("model profile model is required")
 
-        reference = config.get("api_key_ref")
-        api_key = resolve_secret_reference(reference, required=reference is not None)
+        if config.get("api_key_ref"):
+            raise GatewayError("API key must be directly configured in the profile")
+        api_key = None
+        encrypted = config.get("api_key_encrypted")
+        if encrypted:
+            if self._credential_manager is None:
+                raise GatewayError("credential manager is not configured")
+            try:
+                api_key = self._credential_manager.decrypt_secret(str(encrypted))
+            except CredentialError as exc:
+                raise GatewayError("stored model API key cannot be decrypted") from exc
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        payload: dict[str, Any] = {"model": model, "messages": [dict(item) for item in messages]}
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [dict(item) for item in messages],
+        }
         for key in ("temperature", "top_p", "max_tokens", "frequency_penalty", "presence_penalty", "seed"):
             if key in config:
                 payload[key] = config[key]
@@ -89,7 +168,7 @@ class OpenAICompatibleGateway:
             payload["response_format"] = dict(response_format)
 
         response = self._post_with_retries(
-            f"{base_url}/chat/completions",
+            _chat_completions_url(base_url),
             payload,
             headers,
             timeout=float(config.get("timeout", 30)),
@@ -139,4 +218,4 @@ class OpenAICompatibleGateway:
                 return response
             except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
-        raise GatewayError("model provider request failed") from last_error
+        raise _provider_request_error(last_error or RuntimeError("unknown provider error")) from last_error

@@ -21,12 +21,21 @@ def _config(node: Any) -> dict[str, Any]:
     return dict(value or {})
 
 
-def _render(value: Any, context: ExecutionContext) -> Any:
+def _render(
+    value: Any,
+    context: ExecutionContext,
+    inputs: Mapping[str, Any] | None = None,
+) -> Any:
     if not isinstance(value, str):
         return value
 
     def replace(match: re.Match[str]) -> str:
-        resolved = resolve_value(match.group(1).strip(), context)
+        reference = match.group(1).strip()
+        resolved = (
+            inputs[reference]
+            if inputs is not None and reference in inputs
+            else resolve_value(reference, context)
+        )
         if resolved is MISSING or resolved is None:
             return ""
         return str(resolved)
@@ -39,8 +48,66 @@ def _node_output(context: ExecutionContext, reference: str) -> Any:
     return None if resolved is MISSING else resolved
 
 
+def _contract_fields(config: Mapping[str, Any], key: str) -> list[tuple[str, str]]:
+    configured = config.get(key)
+    if isinstance(configured, Mapping):
+        configured = [{"name": name, "path": path} for name, path in configured.items()]
+    if not isinstance(configured, list):
+        return []
+
+    fields: list[tuple[str, str]] = []
+    for item in configured:
+        if isinstance(item, str):
+            path = item
+            name = item.rsplit(".", 1)[-1]
+        elif isinstance(item, Mapping):
+            path = str(item.get("path", item.get("input", ""))).strip()
+            name = str(
+                item.get("name", item.get("alias", path.rsplit(".", 1)[-1]))
+            ).strip()
+        else:
+            continue
+        if name and path:
+            fields.append((name, path))
+    return fields
+
+
+def _contract_inputs(
+    config: Mapping[str, Any], context: ExecutionContext
+) -> dict[str, Any]:
+    return {
+        name: _node_output(context, path)
+        for name, path in _contract_fields(config, "input_fields")
+    }
+
+
+def _project_output(
+    output: Mapping[str, Any], config: Mapping[str, Any]
+) -> dict[str, Any]:
+    fields = _contract_fields(config, "output_fields")
+    if not fields:
+        return dict(output)
+
+    projected: dict[str, Any] = {}
+    for name, path in fields:
+        value: Any = output
+        found = True
+        for part in path.split("."):
+            if isinstance(value, Mapping) and part in value:
+                value = value[part]
+            else:
+                found = False
+                break
+        if not found and name in output:
+            value = output[name]
+            found = True
+        if found:
+            projected[name] = value
+    return projected
+
+
 def _python_inputs(config: Mapping[str, Any], context: ExecutionContext) -> dict[str, Any]:
-    configured = config.get("inputs")
+    configured = config.get("inputs", config.get("input_fields"))
     if isinstance(configured, Mapping):
         return {
             str(name): _node_output(context, str(reference))
@@ -159,7 +226,11 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
     node_type = _node_type(node)
     config = _config(node)
     if node_type == "input":
-        return NodeResult(status="succeeded", output=dict(context.extracted), selected_ports=["out"])
+        return NodeResult(
+            status="succeeded",
+            output=_project_output(context.extracted, config),
+            selected_ports=["out"],
+        )
     if node_type == "condition":
         condition = evaluate_condition(config, context)
         return NodeResult(
@@ -176,7 +247,7 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
             _python_inputs(config, context),
             timeout_seconds=float(config.get("timeout_seconds", 2)),
         )
-        return NodeResult(status="succeeded", output=output)
+        return NodeResult(status="succeeded", output=_project_output(output, config))
     if node_type == "rag":
         query = _render(config.get("query", config.get("query_template", "")), context)
         records = _knowledge_search(
@@ -199,8 +270,11 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
                 status="insufficient",
                 output={"status": "insufficient", "message": "缺少可核验知识库引用"},
             )
-        system_prompt = _render(config.get("system_prompt", ""), context)
-        user_prompt = _render(config.get("prompt", config.get("user_prompt", "")), context)
+        inputs = _contract_inputs(config, context)
+        system_prompt = _render(config.get("system_prompt", ""), context, inputs)
+        user_prompt = _render(
+            config.get("prompt", config.get("user_prompt", "")), context, inputs
+        )
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": str(system_prompt)})
@@ -220,9 +294,9 @@ def execute_node(node: Any, context: ExecutionContext, providers: Mapping[str, A
             parsed = {"text": str(parsed)}
         if evidence_refs:
             parsed.setdefault("evidence_refs", evidence_refs)
-        return NodeResult(status="succeeded", output=parsed)
+        return NodeResult(status="succeeded", output=_project_output(parsed, config))
     if node_type == "output":
-        fields = config.get("transfer_fields", [])
+        fields = config.get("output_fields") or config.get("transfer_fields", [])
         if not fields:
             output = (
                 dict(next(reversed(context.node_outputs.values())))

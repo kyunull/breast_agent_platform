@@ -272,4 +272,42 @@ describe('WorkflowTestView', () => {
     resolveB(runB)
     await requestB
   })
+
+  it('uploads a complete JSON document into the masked test input', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const file = new File(['{"patient_data":{"age":42}}'], 'BC-001.json', { type: 'application/json' })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+
+    await input.trigger('change')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('textarea').element.value).toContain('"patient_data"')
+    expect(wrapper.text()).toContain('BC-001.json')
+  })
+
+  it('keeps the current test input when an uploaded file is invalid', async () => {
+    const wrapper = mount(WorkflowTestView, {
+      global: {
+        plugins: [ElementPlus],
+        stubs: { JsonComparePane: true, TraceTimeline: true, EvidenceDrawer: true },
+      },
+    })
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('{"existing":true}')
+    const file = new File(['[]'], 'array.json', { type: 'application/json' })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+
+    await input.trigger('change')
+    await wrapper.vm.$nextTick()
+
+    expect(textarea.element.value).toBe('{"existing":true}')
+    expect(wrapper.text()).toContain('上传内容必须是 JSON 对象。')
+  })
 })

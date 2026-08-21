@@ -1,3 +1,4 @@
+import base64
 import json
 
 import httpx
@@ -17,8 +18,7 @@ class Profile:
         self.medical_options_json = {}
 
 
-def test_openai_gateway_posts_chat_completions_with_env_key(monkeypatch):
-    monkeypatch.setenv("MODEL_API_KEY", "test-secret")
+def test_openai_gateway_posts_chat_completions_with_encrypted_key():
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -35,14 +35,17 @@ def test_openai_gateway_posts_chat_completions_with_env_key(monkeypatch):
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    gateway = OpenAICompatibleGateway(client=client)
+    from app.core.credentials import CredentialManager
+    manager = CredentialManager.from_key(base64.urlsafe_b64encode(b"0" * 32))
+    encrypted = manager.encrypt_secret("test-secret")
+    gateway = OpenAICompatibleGateway(client=client, credential_manager=manager)
     result = gateway.complete(
         Profile(
             {
                 "provider": "openai_compatible",
                 "base_url": "https://models.example.test/v1",
                 "model": "gpt-test",
-                "api_key_ref": "MODEL_API_KEY_REF",
+                "api_key_encrypted": encrypted,
                 "temperature": 0.2,
                 "top_p": 0.9,
                 "max_tokens": 200,
@@ -67,10 +70,67 @@ def test_openai_gateway_posts_chat_completions_with_env_key(monkeypatch):
     client.close()
 
 
-def test_openai_gateway_requires_resolvable_key(monkeypatch):
-    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+def test_openai_gateway_accepts_a_full_chat_completions_url():
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}]},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    gateway = OpenAICompatibleGateway(client=client)
+    gateway.complete(
+        Profile(
+            {
+                "base_url": "https://models.example.test/v1/chat/completions",
+                "model": "gpt-test",
+            }
+        ),
+        [{"role": "user", "content": "hello"}],
+    )
+
+    assert requests[0].url == httpx.URL("https://models.example.test/v1/chat/completions")
+    client.close()
+
+
+@pytest.mark.parametrize(
+    ("status_code", "code", "safe_message"),
+    [
+        (401, "model_authentication_failed", "API Key 无效或无权访问该模型。"),
+        (404, "model_endpoint_not_found", "模型接口地址不正确。"),
+        (429, "model_rate_limited", "模型服务请求过于频繁，请稍后重试。"),
+        (503, "model_service_unavailable", "模型服务暂时不可用。"),
+    ],
+)
+def test_openai_gateway_classifies_provider_http_errors(status_code, code, safe_message):
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                status_code,
+                json={"error": {"message": "do not expose provider response or secrets"}},
+            )
+        )
+    )
+    gateway = OpenAICompatibleGateway(client=client)
+
+    with pytest.raises(GatewayError) as caught:
+        gateway.complete(
+            Profile({"base_url": "https://models.example.test/v1", "model": "gpt-test"}),
+            [],
+        )
+
+    assert caught.value.code == code
+    assert caught.value.safe_message == safe_message
+    assert "do not expose" not in caught.value.safe_message
+    client.close()
+
+
+def test_openai_gateway_rejects_environment_key_reference():
     gateway = OpenAICompatibleGateway(client=httpx.Client(transport=httpx.MockTransport(lambda _: None)))
-    with pytest.raises(GatewayError, match="environment reference"):
+    with pytest.raises(GatewayError, match="directly configured"):
         gateway.complete(
             Profile(
                 {

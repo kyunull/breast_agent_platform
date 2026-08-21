@@ -8,3 +8,4 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/platform.db"
     session_ttl_hours: int = 12
     cors_origins: str = "http://localhost:5173"
+    credential_key_file: str = "data/credential.key"

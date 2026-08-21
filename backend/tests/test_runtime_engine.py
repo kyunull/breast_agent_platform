@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 
+import pytest
+
 from app.extraction.schemas import ExtractionConfig
 from app.graph.schemas import WorkflowGraph
 from app.runtime.conditions import evaluate_condition
 from app.runtime.context import ExecutionContext
 from app.runtime.engine import WorkflowEngine
+from app.runtime.executors import execute_node
 from app.runtime.knowledge_gateway import EvidenceRecord
 from app.runtime.model_gateway import ChatCompletionResult
 
@@ -42,6 +45,192 @@ def test_condition_selects_configured_ports():
         context,
     )
     assert result.selected_ports == ["advanced"]
+
+
+def test_condition_supports_requested_comparison_operators():
+    context = ExecutionContext(
+        raw_input={},
+        extracted={
+            "facts": {
+                "empty_text": "",
+                "status": "HER2+",
+                "age": 52,
+                "tags": ["advanced", "reviewed"],
+            }
+        },
+        run_id="run-operators",
+    )
+    cases = [
+        ({"operator": "empty", "left": "facts.empty_text"}, "true"),
+        ({"operator": "not_empty", "left": "facts.status"}, "true"),
+        ({"operator": "eq", "left": "facts.age", "right": 52}, "true"),
+        ({"operator": "neq", "left": "facts.age", "right": 51}, "true"),
+        ({"operator": "gt", "left": "facts.age", "right": 50}, "true"),
+        ({"operator": "lt", "left": "facts.age", "right": 60}, "true"),
+        ({"operator": "gte", "left": "facts.age", "right": 52}, "true"),
+        ({"operator": "lte", "left": "facts.age", "right": 52}, "true"),
+        ({"operator": "contains", "left": "facts.tags", "right": "advanced"}, "true"),
+    ]
+
+    for config, expected in cases:
+        assert evaluate_condition(config, context).status == expected
+
+
+def test_condition_compares_numeric_field_with_editor_text_value():
+    context = ExecutionContext(raw_input={}, extracted={"facts": {"age": 52}}, run_id="run-editor-value")
+
+    assert evaluate_condition(
+        {"operator": "gt", "left": "facts.age", "right": "50"}, context
+    ).status == "true"
+
+
+def test_condition_compares_boolean_field_with_editor_text_value():
+    context = ExecutionContext(raw_input={}, extracted={"facts": {"eligible": True}}, run_id="run-editor-boolean")
+
+    assert evaluate_condition(
+        {"operator": "eq", "left": "facts.eligible", "right": "true"}, context
+    ).status == "true"
+
+
+def test_condition_group_short_circuits_to_one_of_two_ports():
+    context = ExecutionContext(
+        raw_input={},
+        extracted={"facts": {"status": "HER2+", "age": 52}},
+        run_id="run-group",
+    )
+    result = evaluate_condition(
+        {
+            "operator": "or",
+            "operands": [
+                {"operator": "empty", "left": "facts.status"},
+                {"operator": "lt", "left": "facts.age", "right": 60},
+            ],
+            "true_port": "satisfied",
+            "false_port": "unsatisfied",
+        },
+        context,
+    )
+
+    assert result.status == "true"
+    assert result.selected_ports == ["satisfied"]
+
+
+def test_condition_missing_strategy_routes_unknown_to_unsatisfied():
+    context = ExecutionContext(raw_input={}, extracted={"facts": {}}, run_id="run-missing")
+    result = evaluate_condition(
+        {
+            "operator": "not_empty",
+            "left": "facts.missing",
+            "missing_strategy": "false",
+            "true_port": "satisfied",
+            "false_port": "unsatisfied",
+        },
+        context,
+    )
+
+    assert result.status == "false"
+    assert result.selected_ports == ["unsatisfied"]
+
+
+def test_condition_missing_strategy_can_mark_review_or_stop():
+    context = ExecutionContext(raw_input={}, extracted={"facts": {}}, run_id="run-missing")
+    review = evaluate_condition(
+        {
+            "operator": "eq",
+            "left": "facts.missing",
+            "right": "x",
+            "missing_strategy": "needs_review",
+            "false_port": "unsatisfied",
+        },
+        context,
+    )
+
+    assert review.status == "needs_review"
+    assert review.selected_ports == ["unsatisfied"]
+
+    with pytest.raises(ValueError, match="condition value is unknown"):
+        evaluate_condition(
+            {
+                "operator": "eq",
+                "left": "facts.missing",
+                "right": "x",
+                "missing_strategy": "error",
+            },
+            context,
+        )
+
+
+def test_python_rule_uses_editor_field_contracts_for_inputs_and_outputs():
+    context = ExecutionContext(
+        raw_input={}, extracted={"facts": {"age": 52}}, run_id="run-field-contract"
+    )
+
+    result = execute_node(
+        {
+            "type": "python_rule",
+            "config": {
+                "code": "result = {'eligible': patient_age >= 50, 'ignored': 'value'}",
+                "input_fields": [{"name": "patient_age", "path": "facts.age", "required": True}],
+                "output_fields": [{"name": "is_eligible", "path": "eligible"}],
+            },
+        },
+        context,
+        {},
+    )
+
+    assert result.output == {"is_eligible": True}
+
+
+def test_llm_uses_editor_input_aliases_and_projects_declared_outputs():
+    model = FakeModel()
+    context = ExecutionContext(
+        raw_input={}, extracted={"facts": {"stage": "IV"}}, run_id="run-llm-contract"
+    )
+
+    result = execute_node(
+        {
+            "type": "llm",
+            "config": {
+                "prompt": "分期：{{stage}}",
+                "input_fields": [{"name": "stage", "path": "facts.stage", "required": True}],
+                "output_fields": [{"name": "recommendation", "path": "answer"}],
+            },
+        },
+        context,
+        {"model": model},
+    )
+
+    assert model.messages[0][-1]["content"] == "分期：IV"
+    assert result.output == {"recommendation": "根据指南建议示例方案。"}
+
+
+def test_input_and_output_nodes_apply_editor_field_contracts():
+    context = ExecutionContext(
+        raw_input={},
+        extracted={"facts": {"age": 52, "stage": "IV"}},
+        run_id="run-io-contract",
+        node_outputs={"rule": {"eligible": True, "ignored": "value"}},
+    )
+
+    input_result = execute_node(
+        {
+            "type": "input",
+            "config": {"output_fields": [{"name": "patient_age", "path": "facts.age"}]},
+        },
+        context,
+        {},
+    )
+    output_result = execute_node(
+        {
+            "type": "output",
+            "config": {"output_fields": [{"name": "is_eligible", "path": "rule.eligible"}]},
+        },
+        context,
+        {},
+    )
+
+    assert input_result.output == {"patient_age": 52}
+    assert output_result.output == {"is_eligible": True}
 
 
 @dataclass
@@ -301,3 +490,41 @@ def test_engine_merges_after_skipping_an_unselected_branch():
     )
     assert result.output == {"branch": "yes"}
     assert "no_rule" not in result.node_outputs
+
+
+def test_engine_runs_graphs_saved_with_frontend_input_output_ports():
+    graph = WorkflowGraph.model_validate(
+        {
+            "nodes": [
+                {"id": "input", "type": "input", "name": "输入", "output_ports": ["output"]},
+                {"id": "output", "type": "output", "name": "输出", "input_ports": ["input"]},
+            ],
+            "edges": [
+                {
+                    "id": "edge",
+                    "source": "input",
+                    "target": "output",
+                    "source_port": "output",
+                    "target_port": "input",
+                }
+            ],
+        }
+    )
+
+    result = WorkflowEngine().execute(
+        graph,
+        ExtractionConfig.model_validate(
+            {
+                "groups": [
+                    {
+                        "id": "facts",
+                        "label": "事实",
+                        "fields": [{"alias": "age", "path": "$.age", "type": "integer"}],
+                    }
+                ]
+            }
+        ),
+        {"age": 52},
+    )
+
+    assert result.output == {"facts": {"age": 52}}

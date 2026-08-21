@@ -1,16 +1,29 @@
 import { apiClient } from './client'
-import type { ModelProfileConnectionTestResponse, Profile, ProfileCreatePayload } from '@/types/api'
+import type { EvidenceResponse, ModelProfileConnectionTestResponse, Profile, ProfileCreatePayload } from '@/types/api'
 
 export interface ModelProfileConnectionTestPayload {
   provider: 'openai_compatible'
   base_url: string
   model: string
-  api_key_ref?: string
+  api_key?: string
+  profile_id?: string
   temperature?: number
   top_p?: number
   max_tokens?: number
   timeout?: number
   retries?: number
+}
+
+export interface KnowledgePreviewPayload {
+  knowledge_profile_id: string
+  query: string
+  guideline_ids: string[]
+  version_ids: string[]
+  language: string
+}
+
+export interface KnowledgePreviewResponse {
+  evidence: EvidenceResponse[]
 }
 
 export async function listModelProfiles(): Promise<Profile[]> {
@@ -38,7 +51,10 @@ export async function patchKnowledgeProfile(id: string, payload: Partial<Profile
 }
 
 export async function testModelProfile(payload: ModelProfileConnectionTestPayload): Promise<ModelProfileConnectionTestResponse> {
-  return (await apiClient.post<ModelProfileConnectionTestResponse>('/api/v1/model-profiles/test', {
-    technical_config: payload,
-  })).data
+  const { api_key, profile_id, ...technical_config } = payload
+  return (await apiClient.post<ModelProfileConnectionTestResponse>('/api/v1/model-profiles/test', { technical_config, api_key, profile_id })).data
+}
+
+export async function previewKnowledge(payload: KnowledgePreviewPayload): Promise<KnowledgePreviewResponse> {
+  return (await apiClient.post<KnowledgePreviewResponse>('/api/v1/knowledge/retrieve/preview', payload)).data
 }

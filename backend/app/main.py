@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api import router
 from app.core.config import Settings
+from app.core.credentials import CredentialManager
 from app.core.database import get_engine, get_request_db, initialize_models, session_factory
 from app.core.errors import validation_error_handler
 
@@ -15,6 +16,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     load_dotenv(override=False)
     app = FastAPI(title="Breast Cancer Decision Agent Backend", version="0.1.0")
     app.state.settings = settings or Settings()
+    app.state.credential_manager = CredentialManager.from_file(app.state.settings.credential_key_file)
     allowed_origins = [
         origin.strip()
         for origin in app.state.settings.cors_origins.split(",")

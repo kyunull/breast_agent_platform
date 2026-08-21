@@ -135,7 +135,7 @@ Profile：
 
 ## 配置与安全
 
-复制 `backend/.env.example` 为 `backend/.env`。默认使用 `backend/data/platform.db`，生产环境可将 `DATABASE_URL` 改为 PostgreSQL 连接串。模型和知识库 Profile 通过 `technical_config.api_key_ref` 引用环境变量，API Key 不应写入工作流定义、节点 JSON、日志或 Git。
+复制 `backend/.env.example` 为 `backend/.env`。默认使用 `backend/data/platform.db`，生产环境可将 `DATABASE_URL` 改为 PostgreSQL 连接串。模型服务的 API Key 在管理员的“系统配置”页面直接输入，服务端使用 `backend/data/credential.key` 加密保存，接口不会返回明文或密文。知识库适配器仍可在配置中使用大写 `*_REF` 引用环境变量；任何 API Key 都不会写入工作流定义、节点 JSON、日志或 Git。
 
 前端令牌只存于 `sessionStorage`；患者输入仅用于当前运行，不写入浏览器持久存储。节点 JSON 复制/粘贴会去除密钥和患者数据。普通用户界面不会展示温度、`top_k`、BM25、分数阈值、重试和超时等技术参数，后端脱敏和权限校验是最终边界。
 

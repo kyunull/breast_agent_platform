@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.profiles.models import KnowledgeProfile
 from app.profiles import router as profiles_router
+from app.profiles.models import KnowledgeProfile, ModelProfile
 from app.runtime.model_gateway import GatewayError
 
 
@@ -242,21 +242,79 @@ def test_medical_user_sees_only_active_exposed_profiles(client, admin_token, med
     assert [item["name"] for item in response.json()] == ["Exposed"]
 
 
-def _model_connection_payload():
+def _model_connection_payload(*, api_key="sk-test-secret", profile_id=None):
     return {
         "technical_config": {
             "provider": "openai_compatible",
             "base_url": "https://models.example.test/v1",
             "model": "gpt-test",
-            "api_key_ref": "MODEL_API_KEY_REF",
-        }
+        },
+        "api_key": api_key,
+        **({"profile_id": profile_id} if profile_id else {}),
     }
+
+
+def test_model_profile_stores_an_encrypted_key_and_redacts_it_from_responses(client, admin_token):
+    payload = {
+        "name": "Encrypted model",
+        "technical_config": {
+            "provider": "openai_compatible",
+            "base_url": "https://models.example.test/v1",
+            "model": "gpt-test",
+        },
+        "api_key": "sk-live-secret",
+        "medical_options": {},
+    }
+    response = client.post("/api/v1/model-profiles", headers={"Authorization": f"Bearer {admin_token}"}, json=payload)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["api_key_configured"] is True
+    assert "api_key" not in body
+    assert "api_key_encrypted" not in body["technical_config"]
+
+    db = client.app.state.db_factory()
+    try:
+        profile = db.get(ModelProfile, body["id"])
+        assert profile is not None
+        assert profile.technical_config_json["api_key_encrypted"] != "sk-live-secret"
+        assert profile.technical_config_json["api_key_encrypted"]
+    finally:
+        db.close()
+
+
+def test_model_profile_patch_with_blank_key_preserves_existing_secret(client, admin_token):
+    created = client.post(
+        "/api/v1/model-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "Keep secret model",
+            "technical_config": {"provider": "openai_compatible", "base_url": "https://models.example.test/v1", "model": "gpt-test"},
+            "api_key": "sk-keep-secret",
+        },
+    )
+    profile_id = created.json()["id"]
+    response = client.patch(
+        f"/api/v1/model-profiles/{profile_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "Keep secret model renamed", "api_key": ""},
+    )
+    assert response.status_code == 200, response.text
+    db = client.app.state.db_factory()
+    try:
+        profile = db.get(ModelProfile, profile_id)
+        assert profile is not None
+        assert profile.technical_config_json["api_key_encrypted"]
+    finally:
+        db.close()
 
 
 def test_admin_can_test_openai_compatible_model_profile(client, admin_token, monkeypatch):
     calls = []
 
     class FakeGateway:
+        def __init__(self, **_):
+            pass
+
         def complete(self, profile, messages):
             calls.append((profile, messages))
             return SimpleNamespace(model="mock-model")
@@ -273,8 +331,41 @@ def test_admin_can_test_openai_compatible_model_profile(client, admin_token, mon
     assert response.json()["ok"] is True
     assert response.json()["model"] == "mock-model"
     assert response.json()["latency_ms"] >= 0
-    assert calls[0][0].technical_config_json == _model_connection_payload()["technical_config"]
+    assert calls[0][0].technical_config_json["provider"] == "openai_compatible"
+    assert "api_key_encrypted" in calls[0][0].technical_config_json
     assert calls[0][1] == [{"role": "user", "content": "请仅回复：连接成功。"}]
+
+
+def test_admin_can_test_model_connection_with_an_already_saved_key(client, admin_token, monkeypatch):
+    created = client.post(
+        "/api/v1/model-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "Saved key model",
+            "technical_config": {"provider": "openai_compatible", "base_url": "https://models.example.test/v1", "model": "gpt-test"},
+            "api_key": "sk-saved-secret",
+        },
+    )
+    profile_id = created.json()["id"]
+    calls = []
+
+    class FakeGateway:
+        def __init__(self, **_):
+            pass
+
+        def complete(self, profile, messages):
+            calls.append(profile)
+            return SimpleNamespace(model="mock-model")
+
+    monkeypatch.setattr(profiles_router, "OpenAICompatibleGateway", FakeGateway)
+    response = client.post(
+        "/api/v1/model-profiles/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=_model_connection_payload(api_key=None, profile_id=profile_id),
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls[0].technical_config_json["api_key_encrypted"]
 
 
 def test_medical_user_cannot_test_model_profile_connection(client, medical_token):
@@ -291,6 +382,9 @@ def test_model_profile_connection_gateway_error_does_not_expose_secret(
     client, admin_token, monkeypatch
 ):
     class FakeGateway:
+        def __init__(self, **_):
+            pass
+
         def complete(self, profile, messages):
             raise GatewayError("upstream rejected sk-test-secret")
 
@@ -316,6 +410,9 @@ def test_model_profile_connection_gateway_error_does_not_expose_arbitrary_provid
     )
 
     class FakeGateway:
+        def __init__(self, **_):
+            pass
+
         def complete(self, profile, messages):
             raise GatewayError(secret_message)
 
@@ -335,3 +432,33 @@ def test_model_profile_connection_gateway_error_does_not_expose_arbitrary_provid
     assert "secret" not in response.text
     assert "Bearer token-secret" not in response.text
     assert "req-123" not in response.text
+
+
+def test_model_profile_connection_returns_safe_actionable_gateway_error(
+    client, admin_token, monkeypatch
+):
+    class FakeGateway:
+        def __init__(self, **_):
+            pass
+
+        def complete(self, profile, messages):
+            raise GatewayError(
+                "provider rejected a secret request",
+                code="model_authentication_failed",
+                safe_message="API Key 无效或无权访问该模型。",
+            )
+
+    monkeypatch.setattr(profiles_router, "OpenAICompatibleGateway", FakeGateway)
+
+    response = client.post(
+        "/api/v1/model-profiles/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json=_model_connection_payload(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "model_authentication_failed",
+        "message": "API Key 无效或无权访问该模型。",
+    }
+    assert "secret request" not in response.text

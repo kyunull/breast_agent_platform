@@ -8,7 +8,8 @@ export interface ModelProfileForm {
   exposed_to_medical: boolean
   base_url: string
   model: string
-  api_key_ref: string
+  api_key: string
+  api_key_configured: boolean
   temperature: number | string
   top_p: number | string
   max_tokens: number | string
@@ -30,6 +31,7 @@ type ModelProfileLike = Partial<{
   exposed_to_medical: boolean
   medical_options: Record<string, unknown>
   technical_config: Record<string, unknown>
+  api_key_configured?: boolean
 }>
 
 export function modelProfileToForm(profile?: ModelProfileLike): ModelProfileForm {
@@ -39,7 +41,7 @@ export function modelProfileToForm(profile?: ModelProfileLike): ModelProfileForm
     name: profile?.name ?? '', description: profile?.description ?? '',
     is_active: profile?.is_active ?? true,
     exposed_to_medical: profile?.exposed_to_medical ?? false,
-    base_url: text(technical.base_url), model: text(technical.model ?? technical.model_name), api_key_ref: text(technical.api_key_ref),
+    base_url: text(technical.base_url), model: text(technical.model ?? technical.model_name), api_key: '', api_key_configured: Boolean(profile?.api_key_configured),
     temperature: numberOrValue(technical.temperature), top_p: numberOrValue(technical.top_p), max_tokens: numberOrValue(technical.max_tokens),
     timeout: numberOrValue(technical.timeout), retries: numberOrValue(technical.retries),
     display_name: text(medical.display_name), clinical_scope: text(medical.clinical_scope),
@@ -52,8 +54,7 @@ export function modelFormToPayload(form: Partial<ModelProfileForm>): ProfileCrea
   const technical_config: Record<string, unknown> = {
     provider: 'openai_compatible', base_url: text(form.base_url).trim(), model: text(form.model).trim(),
   }
-  const apiKeyRef = text(form.api_key_ref).trim()
-  if (apiKeyRef) technical_config.api_key_ref = apiKeyRef
+  const apiKey = text(form.api_key).trim()
   for (const [key, value] of [['temperature', form.temperature], ['top_p', form.top_p], ['max_tokens', form.max_tokens], ['timeout', form.timeout], ['retries', form.retries]] as const) {
     const raw = typeof value === 'string' ? value.trim() : value
     if (raw !== '' && raw != null && Number.isFinite(Number(raw))) technical_config[key] = Number(raw)
@@ -63,6 +64,7 @@ export function modelFormToPayload(form: Partial<ModelProfileForm>): ProfileCrea
     name: text(form.name).trim(), description: text(form.description).trim() || undefined,
     is_active: form.is_active, exposed_to_medical: Boolean(form.exposed_to_medical),
     technical_config,
+    ...(apiKey ? { api_key: apiKey } : {}),
     medical_options: {
       display_name: text(form.display_name).trim(), clinical_scope: text(form.clinical_scope).trim(), supported_tasks: tasks, output_style: text(form.output_style).trim(),
     },

@@ -19,7 +19,7 @@ import { toFlowEdge, toFlowNode, toGraphEdge, toGraphNode, type FlowNodeData } f
 import type { WorkflowGraph } from '@/types/graph'
 import WorkflowNode from './WorkflowNode.vue'
 
-const props = defineProps<{ graph: WorkflowGraph }>()
+const props = defineProps<{ graph: WorkflowGraph; selectedNodeId?: string | null }>()
 const emit = defineEmits<{ update: [graph: WorkflowGraph]; select: [nodeId: string] }>()
 const nodes = shallowRef<Node<FlowNodeData>[]>([])
 const edges = shallowRef<Edge[]>([])
@@ -27,10 +27,18 @@ let syncingFromParent = false
 
 watch(() => props.graph, (graph) => {
   syncingFromParent = true
-  nodes.value = graph.nodes.map(toFlowNode)
+  nodes.value = graph.nodes.map((node) => toFlowNode(node, node.id === props.selectedNodeId))
   edges.value = graph.edges.map(toFlowEdge)
   queueMicrotask(() => { syncingFromParent = false })
 }, { deep: true, immediate: true })
+
+watch(() => props.selectedNodeId, (selectedNodeId) => {
+  nodes.value = nodes.value.map((node): Node<FlowNodeData> => {
+    const data = node.data as FlowNodeData | undefined
+    if (!data) return node
+    return { ...node, data: { ...data, selected: node.id === selectedNodeId } }
+  })
+})
 
 function syncGraph() {
   if (syncingFromParent) return
@@ -56,8 +64,27 @@ function onConnect(connection: Connection) {
   if (!connection.source || !connection.target) return
   const isDuplicate = edges.value.some((edge) => edge.source === connection.source && edge.target === connection.target && edge.sourceHandle === connection.sourceHandle)
   if (isDuplicate) return
-  edges.value = [...edges.value, { ...connection, id: `edge-${crypto.randomUUID()}`, type: 'smoothstep' }]
+  const sourceNode = nodes.value.find((node) => node.id === connection.source)
+  const sourceGraphNode = sourceNode?.data?.graphNode
+  const isBranch = sourceGraphNode?.type === 'condition'
+  const label = isBranch ? conditionPortLabel(sourceGraphNode, connection.sourceHandle) : undefined
+  edges.value = [...edges.value, {
+    ...connection,
+    id: `edge-${crypto.randomUUID()}`,
+    type: 'smoothstep',
+    ...(label ? { label, data: { kind: 'branch' } } : {}),
+  }]
   syncGraph()
+}
+
+function conditionPortLabel(node: FlowNodeData['graphNode'] | undefined, handle: string | null | undefined) {
+  if (!node || !handle) return undefined
+  const config = node.config
+  const port = node.output_ports.find((item) => (typeof item === 'string' ? item : item.id) === handle)
+  const fallbackLabel = typeof port === 'string' ? port : port?.label
+  if (handle === String(config.true_port ?? 'satisfied')) return String(config.true_label ?? fallbackLabel ?? '满足')
+  if (handle === String(config.false_port ?? 'unsatisfied')) return String(config.false_label ?? fallbackLabel ?? '不满足')
+  return typeof port === 'string' ? port : port?.label
 }
 
 function onNodeClick(event: NodeMouseEvent) {
